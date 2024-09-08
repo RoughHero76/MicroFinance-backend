@@ -1,0 +1,51 @@
+//src/helpers/token.js
+
+const jwt = require('jsonwebtoken');
+
+async function generateToken(user) {
+    const token = jwt.sign
+        (
+            { uid: user.uid, email: user.email, role: user.role },
+            process.env.JWT_SECRET_TOKEN,
+            { expiresIn: process.env.JWT_SECRET_TOKEN_EXPIRY }
+        );
+    return token;
+}
+
+
+async function verifyToken(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+        return res.status(401).json({ message: 'Invalid token format' });
+    }
+
+
+    jwt.verify(token, process.env.JWT_SECRET_TOKEN, (err, decoded) => {
+        if (err) {
+            if (err.name === 'TokenExpiredError') {
+                //console.error('Token expired:', err);
+                return res.status(401).json({ message: 'Token expired' });
+            } else if (err.name === 'JsonWebTokenError') {
+                //console.error('Invalid token:', err);
+                return res.status(401).json({ message: 'Invalid token' });
+            } else {
+                //console.error('Token verification error:', err);
+                return res.status(401).json({ message: 'Invalid token' });
+            }
+        }
+
+
+        req.uid = decoded.uid;
+        next();
+    });
+}
+
+module.exports = {
+    generateToken,
+    verifyToken
+};

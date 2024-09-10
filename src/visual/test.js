@@ -2,11 +2,11 @@ const { generateRepaymentSchedule } = require('../helpers/loan');
 const fs = require('fs');
 
 const loan = {
-    loanAmount: 25000,
+    loanAmount: 50000,
     loanStartDate: new Date('2024-08-03'),
-    loanDuration: '120 days',
-    installmentFrequency: 'Monthly',
-    gracePeriod: 30
+    loanDuration: '100 days',
+    installmentFrequency: 'Daily',
+    gracePeriod: 1
 };
 
 try {

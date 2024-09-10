@@ -54,44 +54,53 @@ exports.registerCustomer = async (req, res) => {
 
 exports.getCustomers = async (req, res) => {
     try {
-      const { phoneNumber, uid, fullDetails, allCustomers } = req.query;
-      let query = {};
-  
-      if (phoneNumber) {
-        query.phoneNumber = phoneNumber;
-      }
-  
-      if (uid) {
-        query.uid = uid;
-      }
-  
-      let loanFields = 'loanAmount loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments status'; // Only basic loan details
-      if (fullDetails === 'true') {
-        loanFields = '';
-      }
-  
-      let customers;
-      if (allCustomers === 'true') {
-        customers = await Customer.find(query).populate({
-          path: 'loans',
-          select: loanFields
+        const { phoneNumber, uid, fullDetails, accountStatus, page = 1, limit = 10 } = req.query;
+        let query = {};
+
+        if (phoneNumber) {
+            query.phoneNumber = phoneNumber;
+        }
+
+        if (uid) {
+            query.uid = uid;
+        }
+
+        if (accountStatus) {
+            query.accountStatus = accountStatus;
+        } else {
+            query.accountStatus = 'true';
+        }
+
+        let loanFields = 'loanAmount loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments status';
+        if (fullDetails === 'true') {
+            loanFields = '';
+        }
+
+        const skip = (page - 1) * limit;
+
+        const customers = await Customer.find(query)
+            .sort({ updatedAt: -1 })
+            .skip(skip)
+            .limit(Number(limit))
+            .populate({
+                path: 'loans',
+                select: loanFields
+            });
+
+        const total = await Customer.countDocuments(query);
+
+        res.json({
+            status: 'success',
+            data: customers,
+            page: Number(page),
+            limit: Number(limit),
+            total
         });
-      } else {
-        customers = await Customer.find(query)
-          .sort({ updatedAt: -1 })
-          .limit(5)
-          .populate({
-            path: 'loans',
-            select: loanFields
-          });
-      }
-  
-      res.json({ status: 'success', data: customers });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ status: 'error', message: 'Internal server error' });
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
-  };
+};
 
 
 exports.deleteCustomer = async (req, res) => {

@@ -121,6 +121,10 @@ exports.getAdminProfile = async (req, res) => {
         if (!admin) {
             return res.status(404).json({ status: 'error', message: 'Admin not found' });
         }
+
+        //Only include the last 10 logins
+        admin.loginHistory = admin.loginHistory.slice(-10);
+        
         res.json(
             {
                 status: 'success',
@@ -133,6 +137,22 @@ exports.getAdminProfile = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error fetching profile' });
     }
 };
+
+exports.loginHistory = async (req, res) => {
+    try {
+        const admin = await Admin.findOne({ uid: req.uid }).select('-password');
+        if (!admin) {
+            return res.status(404).json({ status: 'error', message: 'Admin not found' });
+        }
+
+        loginHistory = admin.loginHistory;
+
+        res.json({ status: 'success', message: 'Login history fetched successfully', data: loginHistory });
+    } catch (error) {
+        console.error('Login history fetch error:', error);
+        res.status(500).json({ status: 'error', message: 'Error fetching login history' });
+    }
+}
 
 exports.updateAdminProfile = async (req, res) => {
     try {

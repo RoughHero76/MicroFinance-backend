@@ -76,7 +76,7 @@ const customerSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Loan'
     }]
-}, { timestamps: true });  
+}, { timestamps: true });
 
 customerSchema.pre("save", async function (next) {
     // Only hash the password if it has been modified (or is new)

@@ -1,15 +1,18 @@
-// src/models/customer/loans/repayment/repaymentScheduleModel.js
-
+// src/models/Customers/Loans/Repayment/repaymentScheduleModel.js
 const mongoose = require('mongoose');
 
 const repaymentScheduleSchema = new mongoose.Schema({
+    loan: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Loan',
+        required: true
+    },
     dueDate: {
         type: Date,
         required: true
     },
-    paidBeforeDueDate: {
-        type: Boolean,
-        default: null
+    paymentDate: {
+        type: Date,
     },
     amount: {
         type: Number,
@@ -18,17 +21,56 @@ const repaymentScheduleSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Paid', 'Overdue'],
+        enum: ['Pending', 'Paid', 'PartiallyPaid', 'Overdue'],
         default: 'Pending'
     },
-    peneltyApplied: {
+    penaltyApplied: {
         type: Boolean,
         default: false
     },
     penalty: {
-        type: Number,
-        default: 0
-    }
-}, { timestamps: true });
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Penalty'
+    },
 
-module.exports = repaymentScheduleSchema;
+    originalAmount: {
+        type: Number
+    },
+    repaymentSchedules: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'RepaymentSchedule'
+    }],
+
+    repayments: {
+        type: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Repayment'
+        }]
+    },
+
+    collectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+    },
+
+    loanInstallmentNumber: {
+        type: Number,
+    },
+
+}, { timestamps: true });
+// Add a virtual field
+repaymentScheduleSchema.virtual('isOverdue').get(function () {
+    return this.status === 'Overdue';
+});
+
+// Add a method
+repaymentScheduleSchema.methods.calculatePenalty = function () {
+    // Implement penalty calculation logic here
+};
+
+// Add an index
+repaymentScheduleSchema.index({ loan: 1, dueDate: 1 });
+
+
+const RepaymentSchedule = mongoose.model('RepaymentSchedule', repaymentScheduleSchema);
+module.exports = RepaymentSchedule;

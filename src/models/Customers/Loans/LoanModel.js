@@ -1,7 +1,6 @@
+// src/models/Customers/Loans/loanModel.js
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { addDays } = require('date-fns');
-const repaymentScheduleSchema = require('./repayment/repaymentScheduleModel');
 
 const loanSchema = new mongoose.Schema({
     uid: {
@@ -45,48 +44,26 @@ const loanSchema = new mongoose.Schema({
         min: [0, 'Interest rate must be a positive number']
     },
     documents: {
-        stampPaper: {
-            type: String,
-            required: true
-        },
-        promissoryNote: {
-            type: String,
-            required: true
-        },
-        stampPaperPhotoLink: {
-            type: String,
-            required: true
-        },
-        promissoryNotePhotoLink: {
-            type: String,
-            required: true
-        },
-        blankPaper: {
-            type: String,
-            required: true
-        },
+        stampPaper: String,
+        promissoryNote: String,
+        stampPaperPhotoLink: String,
+        promissoryNotePhotoLink: String,
+        blankPaper: String,
         cheques: [{
-            photoLink: String
-        }],
-        chequesDetails: [{
+            photoLink: String,
             number: String,
             bankName: String,
             accountNumber: String,
             ifsc: String
         }],
-        governmentIdsFront: [{
-            photoLink: String
-        }],
-        governmentIdsBack: [{
-            photoLink: String
-        }],
-        governmentIdsDetails: [{
+        governmentIds: [{
             type: {
                 type: String,
                 enum: ['Aadhar', 'PAN', 'Driving License', 'Voter ID', 'Passport']
             },
             number: String,
-            imageUrl: String
+            frontPhotoLink: String,
+            backPhotoLink: String
         }]
     },
     status: {
@@ -94,7 +71,6 @@ const loanSchema = new mongoose.Schema({
         enum: ['Pending', 'Approved', 'Rejected', 'Active', 'Closed'],
         default: 'Pending'
     },
-    repaymentSchedule: [repaymentScheduleSchema],
     loanStartDate: {
         type: Date,
         required: true,
@@ -118,9 +94,21 @@ const loanSchema = new mongoose.Schema({
         default: 0
     },
     totalPenalty: {
+        type: [{
+                type: mongoose.Schema.Types.ObjectId,
+                ref: 'Penalty'
+            }]
+    },
+    totalPenaltyAmmount: {
         type: Number,
         default: 0
+    },
+    loanType: {
+        type: String,
+        enum: ['Personal', 'Business', 'Other'],
+        default: 'Personal'
     }
 }, { timestamps: true });
 
-module.exports = mongoose.model('Loan', loanSchema);
+const Loan = mongoose.model('Loan', loanSchema);
+module.exports = Loan;

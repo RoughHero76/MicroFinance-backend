@@ -45,12 +45,12 @@ const employeeSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    
+
     profilePic: {
         type: String
     },
 
-    role:{
+    role: {
         type: String,
         default: "employee"
     },
@@ -60,23 +60,36 @@ const employeeSchema = new mongoose.Schema({
         default: true
     },
 
-    isDeleted:{
+    isDeleted: {
         type: Boolean,
         default: false
     },
-
-    lastLogin: { 
-        type: Date, default: Date.now 
+    address: {
+        type: String
     },
 
-    loginHistory: { 
-        type: Array, default: [] 
+    emergencyContact: {
+        type: String
+    },
+
+    //List of collected Repayments 
+    collectedRepayments: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Repayment'
+    }],
+    
+    lastLogin: {
+        type: Date, default: Date.now
+    },
+
+    loginHistory: {
+        type: Array, default: []
     }
 }, { timestamps: true });
 
 // Pre-save middleware to hash password and generate UID
-employeeSchema.pre('save', async function(next) {
-    
+employeeSchema.pre('save', async function (next) {
+
     // Only hash the password if it has been modified (or is new)
     if (!this.isModified('password')) return next();
 
@@ -95,9 +108,9 @@ employeeSchema.pre('save', async function(next) {
 });
 
 // Method to compare passwords
-employeeSchema.methods.comparePassword = async function(candidatePassword) {
+employeeSchema.methods.comparePassword = async function (candidatePassword) {
     return bcrypt.compare(candidatePassword, this.password);
 };
 
 module.exports = mongoose.model("Employee", employeeSchema);
-    
+

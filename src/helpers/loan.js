@@ -107,93 +107,36 @@ function generateRepaymentSchedule(loan) {
         }
     }
 
+
     // Adjust the last installment if necessary
     if (remainingAmount > 0) {
         const lastInstallment = schedule[schedule.length - 1];
         lastInstallment.amount += remainingAmount;
         lastInstallment.dueDate = new Date(Math.min(lastInstallment.dueDate, endDate));
-
-        console.log('Adjusted last installment:', lastInstallment);
     }
 
     const totalRepaymentAmount = schedule.reduce((sum, installment) => sum + installment.amount, 0);
 
     console.log('Total repayment amount:', totalRepaymentAmount);
 
+
+
+    // Ensure we have at least one installment
+    if (schedule.length === 0) {
+        throw new Error('No valid installments generated');
+    }
+
     return {
         schedule,
         loanEndDate: endDate,
         outstandingAmount: loan.loanAmount,
         numberOfInstallments: schedule.length,
-        totalRepaymentAmount
+        totalRepaymentAmount,
+        repaymentAmountPerInstallment: schedule[0].amount
     };
 }
-
 module.exports = {
     generateRepaymentSchedule
 };
 
 
-/* const { addDays, addWeeks, addMonths } = require('date-fns');
-
-function generateRepaymentSchedule(loan) {
-    const schedule = [];
-    let currentDate = new Date(loan.loanStartDate);
-    const totalDays = parseInt(loan.loanDuration.split(' ')[0]);
-    const endDate = addDays(currentDate, totalDays);
-    console.log('currentDate, endDate: ', currentDate, endDate);
-
-    let remainingAmount = loan.loanAmount;
-    let numberOfInstallments;
-
-    switch (loan.installmentFrequency) {
-        case 'Daily':
-            numberOfInstallments = totalDays;
-            break;
-        case 'Weekly':
-            numberOfInstallments = Math.ceil(totalDays / 7);
-            break;
-        case 'Monthly':
-            numberOfInstallments = Math.ceil(totalDays / 30);
-            break;
-    }
-
-    const installmentAmount = Math.ceil(loan.loanAmount / numberOfInstallments);
-
-    for (let i = 0; i < numberOfInstallments; i++) {
-        switch (loan.installmentFrequency) {
-            case 'Daily':
-                currentDate = addDays(currentDate, 1);
-                break;
-            case 'Weekly':
-                currentDate = addWeeks(currentDate, 1);
-                break;
-            case 'Monthly':
-                currentDate = addMonths(currentDate, 1);
-                break;
-        }
-
-        if (currentDate > endDate) currentDate = endDate;
-
-        const amount = i === numberOfInstallments - 1 ? remainingAmount : installmentAmount;
-        remainingAmount -= amount;
-
-        schedule.push({
-            dueDate: currentDate,
-            amount: amount,
-            status: 'Pending'
-        });
-
-        if (currentDate >= endDate) break;
-    }
-
-    return {
-        schedule,
-        loanEndDate: endDate,
-        outstandingAmount: loan.loanAmount
-    };
-}
-
-module.exports = {
-    generateRepaymentSchedule
-}; */

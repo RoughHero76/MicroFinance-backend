@@ -1,11 +1,10 @@
-// src/models/customer/loans/repayment/repayments.js
-
+// src/models/Customers/Loans/Repayment/repaymentModel.js
 const mongoose = require('mongoose');
 
 const repaymentSchema = new mongoose.Schema({
-    loan: {
+    repaymentSchedule: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Loan',
+        ref: 'RepaymentSchedule',
         required: true
     },
     amount: {
@@ -29,11 +28,19 @@ const repaymentSchema = new mongoose.Schema({
         type: String,
         enum: ['Pending', 'Processed', 'Failed'],
         default: 'Pending'
-    }
+    },
+    loan: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Loan',
+    },
+    balanceAfterPayment: {
+        type: Number
+    },
+    collectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee',
+    },
 }, { timestamps: true });
 
 const Repayment = mongoose.model('Repayment', repaymentSchema);
-module.exports = {
-    repaymentSchema,
-    Repayment
-};
+module.exports = Repayment;

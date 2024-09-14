@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Loan = require('../../models/Customers/Loans/LoanModel');
 const Repayment = require('../../models/Customers/Loans/Repayment/Repayments');
 const RepaymentSchedule = require('../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
+const Employee = require('../../models/Employee/EmployeeModel');
 const Penalty = require('../../models/Customers/Loans/Repayment/PenaltyModel');
 const Customer = require('../../models/Customers/profile/CustomerModel');
 const { generateRepaymentSchedule } = require('../../helpers/loan');
@@ -21,6 +22,9 @@ exports.createLoan = [
         { name: 'governmentIdsBack', maxCount: 5 },
     ]),
     async (req, res) => {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
         try {
             console.log('Incoming request', { body: req.body, files: req.files });
 
@@ -58,11 +62,13 @@ exports.createLoan = [
 
             // Validation checks (keep existing validation logic)
 
-            const customer = await Customer.findOne({ uid: customerUid });
+            const customer = await Customer.findOne({ uid: customerUid }).session(session);
             console.log('Customer found:', customer);
 
             if (!customer) {
                 console.log('Customer not found with UID:', customerUid);
+                await session.abortTransaction();
+                session.endSession();
                 return res.status(404).json({ status: 'error', message: 'Customer not found' });
             }
 
@@ -98,18 +104,11 @@ exports.createLoan = [
                 outstandingAmount: parsedBody.loanAmount
             });
 
-            // Save the loan to get an _id
-            await newLoan.save();
-
-            let loanId = newLoan._id.toString();
-
-
             // Function to upload file with the new path structure
             const uploadFileWithPath = async (file, documentType) => {
-                const path = `${customerUid}/${loanId}/${documentType}`;
+                const path = `${customerUid}/${newLoan._id}/${documentType}`;
                 return await uploadFile(file, path);
             };
-
 
             const documentLinks = {
                 stampPaper,
@@ -139,7 +138,7 @@ exports.createLoan = [
                     originalAmount: scheduleItem.amount,
                     loanInstallmentNumber: index + 1
                 });
-                await repaymentSchedule.save();
+                await repaymentSchedule.save({ session });
                 return repaymentSchedule._id;
             }));
 
@@ -147,13 +146,18 @@ exports.createLoan = [
             newLoan.documents = documentLinks;
             newLoan.repaymentSchedules = repaymentSchedules;
 
-            await newLoan.save();
+            await newLoan.save({ session });
             customer.loans.push(newLoan._id);
-            await customer.save();
+            await customer.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
 
             res.status(201).json({ status: 'success', loan: newLoan });
         } catch (error) {
             console.error(error);
+            await session.abortTransaction();
+            session.endSession();
             res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
         }
     }
@@ -230,7 +234,7 @@ exports.createLoanWithOnlyDocumentsURL = async (req, res) => {
 
 exports.deleteLoan = async (req, res) => {
     try {
-        const { loanId } = req.query;
+        const { loanId, force } = req.query;
 
         if (!loanId) {
             return res.status(400).json({ status: 'error', message: 'loanId is required' });
@@ -242,7 +246,6 @@ exports.deleteLoan = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
         }
 
-        console.log(loan.customer);
 
         const customer = await Customer.findById(loan.customer);
 
@@ -251,6 +254,12 @@ exports.deleteLoan = async (req, res) => {
         }
 
         customer.loans = customer.loans.filter(l => l.toString() !== loanId);
+
+        if (force == false) {
+            if (loan.status === 'Active') {
+                return res.status(400).json({ status: 'error', message: 'Loan is active. Cannot delete it.' });
+            }
+        }
 
         await Customer.findByIdAndUpdate(customer._id, { $set: { loans: customer.loans } });
 
@@ -452,54 +461,128 @@ exports.getLoans = async (req, res) => {
 };
 
 
-    /**
-     * Extracts the file path from a URL. The URL is expected to be in the format of
-     * a Google Cloud Storage URL, e.g.:
-     * https://storage.cloud.google.com/bucket-name/path/to/file.txt
-     * Returns the file path as a string, e.g. "path/to/file.txt"
-     * @param {string} url - The URL to extract the file path from
-     * @returns {string} The file path
-     */
-    function extractFilePath(url) {
-        const parsedUrl = new URL(url);
-        const pathParts = parsedUrl.pathname.split('/');
-        // Remove the first two segments (which are likely the repeated bucket name)
-        return pathParts.slice(2).join('/');
+/**
+ * Extracts the file path from a URL. The URL is expected to be in the format of
+ * a Google Cloud Storage URL, e.g.:
+ * https://storage.cloud.google.com/bucket-name/path/to/file.txt
+ * Returns the file path as a string, e.g. "path/to/file.txt"
+ * @param {string} url - The URL to extract the file path from
+ * @returns {string} The file path
+ */
+function extractFilePath(url) {
+    const parsedUrl = new URL(url);
+    const pathParts = parsedUrl.pathname.split('/');
+    // Remove the first two segments (which are likely the repeated bucket name)
+    return pathParts.slice(2).join('/');
+}
+
+
+exports.approveLoan = async (req, res) => {
+
+    try {
+        const { loanId } = req.query;
+
+        if (!loanId) {
+            return res.status(400).json({ status: 'error', message: 'loandId is required' })
+        }
+
+        const loan = await Loan.findById(loanId);
+
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        if (loan.status === 'Approved' || loan.status === 'Active') {
+            return res.status(400).json({ status: 'error', message: 'Loan already approved or active' });
+        }
+
+        if (loan.status === 'Rejected') {
+            return res.status(400).json({ status: 'error', message: 'Loan already rejected' });
+        }
+
+        const customer = await Customer.findById(loan.customer);
+
+        if (!customer) {
+            return res.status(404).json({ status: 'error', message: 'Customer not found' });
+        }
+        loan.status = 'Active';
+        await loan.save();
+        res.json({ status: 'success', message: 'Loan approved successfully', data: loan });
+
+
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 
+}
+
+exports.rejectLoan = async (req, res) => {
+
+    try {
+        const { loanId } = req.query;
+
+        if (!loanId) {
+            return res.status(400).json({ status: 'error', message: 'loandId is required' })
+        }
+
+        const loan = await Loan.findById(loanId);
+
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        if (loan.status === 'Rejected') {
+            return res.status(400).json({ status: 'error', message: 'Loan already rejected' });
+        }
+
+        if (loan.status === 'Approved' || loan.status === 'Active') {
+            return res.status(400).json({ status: 'error', message: 'Loan already approved' });
+        }
+
+        const customer = await Customer.findById(loan.customer);
+
+        if (!customer) {
+            return res.status(404).json({ status: 'error', message: 'Customer not found' });
+        }
+        await RepaymentSchedule.deleteMany({ loan: loanId });
+
+        loan.status = 'Rejected';
+        await loan.save();
+
+        res.json({ status: 'success', message: 'Loan rejected successfully', data: loan });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+}
 
 exports.getRepaymentSchedule = async (req, res) => {
     try {
         const { loanId, searchTerm, statusFilter, dateFrom, dateTo } = req.query;
-        const { page = 1, limit = 10 } = req.query; // Pagination params with defaults
+        const { page = 1, limit = 10 } = req.query;
 
-        // Validate loanId
         if (!loanId) {
             return res.status(400).json({ status: 'error', message: 'Loan ID is required' });
         }
 
-        // Find the loan by loanId
         const loan = await Loan.findById(loanId);
         if (!loan) {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
         }
 
-        // Build the query for RepaymentSchedule
         let query = { loan: loanId };
 
-        // Apply status filter
-        if (statusFilter) {
-            query.status = statusFilter;
-        }
+        if (statusFilter) query.status = statusFilter;
 
-        // Apply date range filter
         if (dateFrom || dateTo) {
             query.dueDate = {};
             if (dateFrom) query.dueDate.$gte = new Date(dateFrom);
             if (dateTo) query.dueDate.$lte = new Date(dateTo);
         }
 
-        // Apply search term
         if (searchTerm) {
             const searchRegex = new RegExp(searchTerm, 'i');
             query.$or = [
@@ -509,22 +592,41 @@ exports.getRepaymentSchedule = async (req, res) => {
             ];
         }
 
-        // Count total documents for pagination
-        const total = await RepaymentSchedule.countDocuments(query);
+        const skip = (page - 1) * limit;
+        const limitNum = parseInt(limit);
 
-        // Fetch paginated repayment schedule
-        const repaymentSchedule = await RepaymentSchedule.find(query)
-            .skip((page - 1) * limit)
-            .limit(parseInt(limit))
-            .sort({ dueDate: 1 });
+        const [total, repaymentSchedule] = await Promise.all([
+            RepaymentSchedule.countDocuments(query),
+            RepaymentSchedule.find(query)
+                .skip(skip)
+                .limit(limitNum)
+                .sort({ dueDate: 1 })
+                .lean()
+        ]);
 
-        // Send paginated response
+        if (repaymentSchedule.length > 0) {
+            const repaymentIds = repaymentSchedule.map(r => r._id);
+            const penalties = await Penalty.find({
+                loan: loanId,
+                repaymentSchedule: { $in: repaymentIds }
+            }).lean();
+
+            const penaltyMap = penalties.reduce((acc, penalty) => {
+                acc[penalty.repaymentSchedule.toString()] = penalty;
+                return acc;
+            }, {});
+
+            repaymentSchedule.forEach(repayment => {
+                repayment.penalty = penaltyMap[repayment._id.toString()] || null;
+            });
+        }
+
         res.json({
             status: 'success',
             data: {
                 repaymentSchedule,
                 currentPage: parseInt(page),
-                totalPages: Math.ceil(total / parseInt(limit)),
+                totalPages: Math.ceil(total / limitNum),
                 totalEntries: total
             }
         });
@@ -534,7 +636,58 @@ exports.getRepaymentSchedule = async (req, res) => {
     }
 };
 
+exports.getRepaymentHistory = async (req, res) => {
 
+    try {
+        const { loanId } = req.query;
+
+        if (!loanId) {
+            return res.status(400).json({ status: 'error', message: 'loanId is required' });
+        }
+
+        const loan = await Loan.findById(loanId);
+
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        const repayments = await Repayment.find({ loan: loanId })
+            .sort({ paymentDate: 1 })
+            .populate('collectedBy', 'fname lname')
+            .exec();
+
+
+        if (!repayments) {
+            return res.status(404).json({ status: 'error', message: 'Repayments not found' });
+        }
+
+        if (repayments.length === 0) {
+            return res.status(200).json({ status: 'success', message: 'No repayments found' });
+        }
+
+        res.status(200).json({ status: 'success', data: repayments });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+}
+
+
+/* exports.approveRepaymentHistory = async (req, res) => {
+    try {
+        const { repaymentScheduleId } = req.query;
+
+        if (!repaymentScheduleId) {
+            return res.status(400).json({ status: 'error', message: 'repaymentScheduleId is required' });
+        }
+
+        const repaymentSchedule = await RepaymentSchedule.findById(repaymentScheduleId);
+        if (!repaymentSchedule) {
+            return res.status(404).json({ status: 'error', message: 'Repayment schedule not found' });
+        }
+
+        if 
+ */
 
 
 exports.getCountofLoans = async (req, res) => {
@@ -584,3 +737,116 @@ exports.getTotalMarketDetails = async (req, res) => {
     }
 };
 
+exports.getRepaymentHistoryToApprove = async (req, res) => {
+    try {
+        const { loanId, defaultDate, date, status, page = 1, limit = 10 } = req.query;
+        const skip = (page - 1) * limit;
+
+        let query = {};
+
+        // Add loanId filter if provided
+        if (loanId) {
+            query.loan = loanId;
+        }
+
+        if (defaultDate == false && !date) {
+            return res.status(400).json({ status: 'error', message: 'date is required if defaultDate is false' });
+        }
+
+        // Add date filter
+        if (defaultDate == false && date) {
+            if (date) {
+                const startOfDay = new Date(date);
+                startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(date);
+                endOfDay.setHours(23, 59, 59, 999);
+                query.paymentDate = { $gte: startOfDay, $lte: endOfDay };
+            } else {
+                // If no date provided, default to today
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                query.paymentDate = { $gte: today, $lt: tomorrow };
+            }
+
+            // Add status filter if provided
+            if (status) {
+                query.status = status;
+            }
+        }
+
+        console.log(query);
+        const repayments = await Repayment.find(query)
+            .sort({ paymentDate: 1 })
+            .populate('collectedBy', 'fname lname')
+            .populate({
+                path: 'loan',
+                select: 'loanAmount customer loanStartDate loanEndDate outstandingAmount',
+                populate: {
+                    path: 'customer',
+                    select: 'fname lname'
+                }
+            })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .exec();
+
+        const total = await Repayment.countDocuments(query);
+
+        if (repayments.length === 0) {
+            return res.status(200).json({ status: 'success', message: 'No repayments found', data: [] });
+        }
+
+        const formattedRepayments = repayments.map(repayment => ({
+            ...repayment.toObject(),
+            collectedBy: repayment.collectedBy ? `${repayment.collectedBy.fname} ${repayment.collectedBy.lname}` : 'N/A',
+            loanDetails: repayment.loan ? {
+                loanAmount: repayment.loan.loanAmount,
+                borrower: `${repayment.loan.customer.fname} ${repayment.loan.customer.lname}`,
+                loanStartDate: repayment.loan.loanStartDate,
+                loanEndDate: repayment.loan.loanEndDate,
+                outstandingAmount: repayment.loan.outstandingAmount
+            } : null
+        }));
+
+        res.status(200).json({
+            status: 'success',
+            data: formattedRepayments,
+            pagination: {
+                total,
+                page: parseInt(page),
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+}
+
+exports.approveRepaymentHistory = async (req, res) => {
+    try {
+        const { repaymentId } = req.body;
+
+        if (!repaymentId) {
+            return res.status(400).json({ status: 'error', message: 'Repayment ID is required' });
+        }
+
+        const repayment = await Repayment.findById(repaymentId);
+
+        if (!repayment) {
+            return res.status(404).json({ status: 'error', message: 'Repayment not found' });
+        }
+
+        repayment.status = 'Approved';
+
+        await repayment.save();
+
+        res.status(200).json({ status: 'success', message: 'Repayment approved successfully' });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+}

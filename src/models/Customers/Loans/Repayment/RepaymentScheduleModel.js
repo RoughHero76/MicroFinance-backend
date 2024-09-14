@@ -36,11 +36,6 @@ const repaymentScheduleSchema = new mongoose.Schema({
     originalAmount: {
         type: Number
     },
-    repaymentSchedules: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'RepaymentSchedule'
-    }],
-
     repayments: {
         type: [{
             type: mongoose.Schema.Types.ObjectId,

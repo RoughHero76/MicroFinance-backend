@@ -1,5 +1,7 @@
 //src/models/Employee/EmployeeModel.js
 const mongoose = require("mongoose");
+const bcrypt = require("bcrypt");
+const { v4: uuidv4 } = require('uuid');
 
 const employeeSchema = new mongoose.Schema({
     uid: {
@@ -72,12 +74,18 @@ const employeeSchema = new mongoose.Schema({
         type: String
     },
 
-    //List of collected Repayments 
+    lastSeen: {
+        type: Date
+    },
+    LastSeenHistory: [{
+        type: Date,
+        
+    }],
     collectedRepayments: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Repayment'
     }],
-    
+
     lastLogin: {
         type: Date, default: Date.now
     },

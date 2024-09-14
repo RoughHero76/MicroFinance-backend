@@ -22,14 +22,25 @@ connectDB();
 const adminRoutes = require('./src/routes/admin/authRoutes');
 const customerCRUD = require('./src/routes/admin/customer/customerCRUD');
 const loanRoutes = require('./src/routes/admin/loan/loanRoutes');
+const employeeRoutesCRUD = require('./src/routes/admin/employee/employeeRoutes');
+
+
+//Employee
+
+const employeeAuthRoutes = require('./src/routes/employee/authRoutes');
+const employeeLoanRoutes = require('./src/routes/employee/loans/loanRoutes');
 
 //Admin Routes
 
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/customer', customerCRUD);
 app.use('/api/admin/loan', loanRoutes);
+app.use('/api/admin/employee', employeeRoutesCRUD);
 
 //Employee Routes
+
+app.use('/api/employee', employeeAuthRoutes);
+app.use('/api/employee/loan', employeeLoanRoutes);
 
 
 app.use(express.static(path.join(__dirname, 'public')));

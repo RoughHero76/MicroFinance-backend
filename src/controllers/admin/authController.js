@@ -105,7 +105,8 @@ exports.loginAdmin = async (req, res) => {
                 fname: admin.fname,
                 lname: admin.lname,
                 email: admin.email,
-                userName: admin.userName
+                userName: admin.userName,
+                role: admin.role
             },
             token
         });

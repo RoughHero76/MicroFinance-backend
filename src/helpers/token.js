@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 async function generateToken(user) {
     const token = jwt.sign
         (
-            { uid: user.uid, email: user.email, role: user.role },
+            { uid: user.uid, email: user.email, role: user.role, _id: user._id },
             process.env.JWT_SECRET_TOKEN,
             { expiresIn: process.env.JWT_SECRET_TOKEN_EXPIRY }
         );
@@ -41,6 +41,7 @@ async function verifyToken(req, res, next) {
 
 
         req.uid = decoded.uid;
+        req._id = decoded._id;
         next();
     });
 }

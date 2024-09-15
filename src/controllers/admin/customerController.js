@@ -2,7 +2,12 @@
 
 const mongoose = require('mongoose');
 const Customer = require('../../models/Customers/profile/CustomerModel');
+const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
+const admin = require('firebase-admin');
+const bucket = admin.storage().bucket();
 
 exports.registerCustomer = async (req, res) => {
     try {
@@ -87,6 +92,14 @@ exports.getCustomers = async (req, res) => {
                 select: loanFields
             });
 
+        //Go through customer profilePic and replace it signed url
+        for (let i = 0; i < customers.length; i++) {
+            if (customers[i].profilePic) {
+                const filePath = extractFilePath(customers[i].profilePic);
+                customers[i].profilePic = await getSignedUrl(filePath);
+            }
+        }
+
         const total = await Customer.countDocuments(query);
 
         res.json({
@@ -165,4 +178,49 @@ exports.getTotalCustomers = async (req, res) => {
     }
 };
 
+exports.addProfilePicture = [
+    upload.single('profilePic'),
+    async (req, res) => {
+        try {
+            const { uid } = req.query;
+            const file = req.file;
 
+            if (!file) {
+                return res.status(400).json({ status: 'error', message: 'file is required' });
+            }
+
+            const customer = await Customer.findOne({ uid });
+            if (!customer) {
+                return res.status(404).json({ status: 'error', message: 'Customer not found' });
+            }
+
+            // Delete the old profile picture if it exists
+            if (customer.profilePic) {
+                const oldFilePath = extractFilePath(customer.profilePic);
+                try {
+                    await bucket.file(oldFilePath).delete();
+                } catch (error) {
+                    console.error('Error deleting old profile picture:', error);
+                }
+            }
+
+            // Upload the new profile picture
+            const destination = `${uid}/profile`;
+            try {
+                const publicUrl = await uploadFile(file, destination);
+
+                // Update the customer's profile picture URL in the database
+                customer.profilePic = publicUrl;
+                await customer.save();
+
+                res.json({ status: 'success', message: 'Profile picture added successfully', url: publicUrl });
+            } catch (error) {
+                console.error('Error uploading file:', error);
+                return res.status(500).json({ status: 'error', message: 'Error uploading file' });
+            }
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ status: 'error', message: 'Internal server error' });
+        }
+    }
+];

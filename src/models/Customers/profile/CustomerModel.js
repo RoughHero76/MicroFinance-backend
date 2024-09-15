@@ -78,6 +78,8 @@ const customerSchema = new mongoose.Schema({
     }]
 }, { timestamps: true });
 
+customerSchema.index({ fname: 'text', lname: 'text', email: 'text', phoneNumber: 'text', userName: 'text' });
+
 customerSchema.pre("save", async function (next) {
     // Only hash the password if it has been modified (or is new)
     if (!this.isModified('password')) return next();

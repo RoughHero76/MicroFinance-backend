@@ -11,15 +11,19 @@ const {
     getLoanDetails,
     applyPenaltyToALoanInstallment,
     getCustomers,
-    collectionCountTody
+    collectionCountTody,
+    getLoanStatistics,
+    getRepaymentHistory
 } = require('../../../controllers/employee/LoanCollection');
 
 router.get('/collection/today', verifyToken, collectionsToBeCollectedToday);
 router.get('/collection/today/count', verifyToken, collectionCountTody);
-router.post('/pay', verifyToken,  payACustomerInstallment);
+router.post('/pay', verifyToken, payACustomerInstallment);
 router.get('/customer/profile', verifyToken, getCustomerProfile);
-router.get('/customers',verifyToken,  getCustomers);
+router.get('/customers', verifyToken, getCustomers);
 router.get('/details', verifyToken, getLoanDetails);
 router.post('/apply/planalty', verifyToken, applyPenaltyToALoanInstallment);
+router.get('/statistics', verifyToken, getLoanStatistics);
+router.get('/repayment/history', verifyToken, getRepaymentHistory);
 
 module.exports = router

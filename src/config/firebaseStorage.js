@@ -59,4 +59,21 @@ async function getSignedUrl(filePath, expirationTime = 3600) {
   }
 }
 
-module.exports = { uploadFile, getSignedUrl };
+/**
+ * Extracts the file path from a URL. The URL is expected to be in the format of
+ * a Google Cloud Storage URL, e.g.:
+ * https://storage.cloud.google.com/bucket-name/path/to/file.txt
+ * Returns the file path as a string, e.g. "path/to/file.txt"
+ * @param {string} url - The URL to extract the file path from
+ * @returns {string} The file path
+ */
+function extractFilePath(url) {
+  const parsedUrl = new URL(url);
+  const pathParts = parsedUrl.pathname.split('/');
+  // Remove the first two segments (which are likely the repeated bucket name)
+  return pathParts.slice(2).join('/');
+}
+
+
+
+module.exports = { uploadFile, getSignedUrl, extractFilePath };

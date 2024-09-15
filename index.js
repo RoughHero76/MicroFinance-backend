@@ -30,6 +30,9 @@ const employeeRoutesCRUD = require('./src/routes/admin/employee/employeeRoutes')
 const employeeAuthRoutes = require('./src/routes/employee/authRoutes');
 const employeeLoanRoutes = require('./src/routes/employee/loans/loanRoutes');
 
+//Shared
+const sharedRoutes = require('./src/routes/shared/sharedRoutes');
+
 //Admin Routes
 
 app.use('/api/admin', adminRoutes);
@@ -41,6 +44,10 @@ app.use('/api/admin/employee', employeeRoutesCRUD);
 
 app.use('/api/employee', employeeAuthRoutes);
 app.use('/api/employee/loan', employeeLoanRoutes);
+
+//Shared Routes
+
+app.use('/api/shared', sharedRoutes);
 
 
 app.use(express.static(path.join(__dirname, 'public')));

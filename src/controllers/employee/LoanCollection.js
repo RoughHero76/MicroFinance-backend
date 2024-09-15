@@ -5,6 +5,7 @@ const Repayment = require("../../models/Customers/Loans/Repayment/Repayments");
 const Penalty = require("../../models/Customers/Loans/Repayment/PenaltyModel");
 const Customer = require("../../models/Customers/profile/CustomerModel");
 const moment = require('moment-timezone');
+const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
 
 exports.collectionCountTody = async (req, res) => {
     try {
@@ -127,10 +128,15 @@ exports.getCustomers = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
-        const customers = await Customer.find({}).skip(skip).limit(Number(limit)).populate({
-            path: 'loans',
-            select: 'loanAmount status loanStartDate loanEndDate outstandingAmount',
-        });
+        // Fetch customers with limited data
+        const customers = await Customer.find({})
+            .skip(skip)
+            .limit(Number(limit))
+            .select('fname lname email phoneNumber address city profilePic')
+            .populate({
+                path: 'loans',
+                select: 'loanAmount status loanStartDate loanEndDate outstandingAmount',
+            });
 
         if (!customers) {
             return res.status(404).json({ status: 'error', message: 'Customers not found' });
@@ -140,24 +146,40 @@ exports.getCustomers = async (req, res) => {
             return res.status(200).json({ status: 'success', message: 'No customers found' });
         }
 
-        const loanIds = customers.flatMap(customer => customer.loans.map(loan => loan._id));
+        for (let i = 0; i < customers.length; i++) {
+            if (customers[i].profilePic) {
+                const filePath = extractFilePath(customers[i].profilePic);
+                customers[i].profilePic = await getSignedUrl(filePath);
+            }
+        }
 
-        const repaymentSchedules = await RepaymentSchedule.find({ loan: { $in: loanIds } });
-        const penalties = await Penalty.find({ loan: { $in: loanIds } });
 
-        customers.forEach(customer => {
-            customer.loans.forEach(loan => {
-                loan.repaymentSchedules = repaymentSchedules.filter(schedule => schedule.loan.toString() === loan._id.toString());
-                loan.penalty = penalties.find(penalty => penalty.loan.toString() === loan._id.toString()) || null;
-            });
-        });
+        // Only send the fields you want in the response
+        const filteredCustomers = customers.map(customer => ({
+            _id: customer._id,
+            fname: customer.fname,
+            lname: customer.lname,
+            profilePic: customer.profilePic,
+            email: customer.email,
+            phoneNumber: customer.phoneNumber,
+            address: customer.address,
+            city: customer.city,
+            loans: customer.loans.map(loan => ({
+                loanAmount: loan.loanAmount,
+                status: loan.status,
+                loanStartDate: loan.loanStartDate,
+                loanEndDate: loan.loanEndDate,
+                outstandingAmount: loan.outstandingAmount,
+            }))
+        }));
 
-        res.status(200).json({ status: 'success', data: customers });
+        res.status(200).json({ status: 'success', data: filteredCustomers });
     } catch (error) {
         console.error('Customer fetch error:', error);
         res.status(500).json({ status: 'error', message: 'Error in getting customers' });
     }
 };
+
 
 exports.getCustomerProfile = async (req, res) => {
     try {
@@ -165,16 +187,16 @@ exports.getCustomerProfile = async (req, res) => {
 
         const customer = await Customer.findById(customerId).populate({
             path: 'loans',
-            select: 'loanAmount status loanStartDate loanEndDate outstandingAmount',
-            populate: {
-                path: 'repaymentSchedules',
-                select: 'dueDate amount status'
-            }
+            select: 'loanAmount status loanStartDate loanEndDate outstandingAmount phoneNumber address city, profilePic',
+
         });
 
         if (!customer) {
             return res.status(404).json({ status: 'error', message: 'Customer not found' });
         }
+
+        const filePath = extractFilePath(customer.profilePic);
+        customer.profilePic = await getSignedUrl(filePath);
 
         res.status(200).json({ status: 'success', data: customer });
     } catch (error) {
@@ -246,7 +268,7 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
             repaymentSchedule: repaymentScheduleId,
             amount: penaltyAmount,
             reason: 'Late payment',
-          
+
         });
 
         await penalty.save();

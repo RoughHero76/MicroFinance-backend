@@ -30,7 +30,7 @@ exports.loginEmployee = async (req, res) => {
         res.json({
             status: 'success',
             message: 'Login successful',
-            employee: {
+            user: {
                 uid: employee.uid,
                 fname: employee.fname,
                 lname: employee.lname,

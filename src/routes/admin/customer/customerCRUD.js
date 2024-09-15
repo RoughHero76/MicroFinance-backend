@@ -7,7 +7,8 @@ const {
     registerCustomer,
     updateCustomer,
     deleteCustomer,
-    getTotalCustomers
+    getTotalCustomers,
+    addProfilePicture
 } = require('../../../controllers/admin/customerController'); 
 const { verifyToken } = require("../../../helpers/token");
 
@@ -18,5 +19,6 @@ router.post('/', verifyToken, registerCustomer);
 router.put('/', verifyToken, updateCustomer); 
 router.delete('/', verifyToken, deleteCustomer); 
 router.get('/count/total', verifyToken, getTotalCustomers);
+router.post('/profile/porfilePicture', verifyToken, addProfilePicture);
 
 module.exports = router; 

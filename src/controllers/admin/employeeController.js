@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 const Employee = require('../../models/Employee/EmployeeModel');
 const { goodPassword, getPasswordErrors } = require('../../helpers/password');
+const Loan = require('../../models/Customers/Loans/LoanModel');
 
 // Register a new Employee
 exports.registerEmployee = async (req, res) => {
@@ -66,9 +67,10 @@ exports.registerEmployee = async (req, res) => {
 // Get a list of Employees
 exports.getEmployees = async (req, res) => {
     try {
-        const { phoneNumber, uid, role, accountStatus, page = 1, limit = 10 } = req.query;
+        const { phoneNumber, uid, role, accountStatus, page = 1, limit = 10, includeSensitiveData } = req.query;
         let query = {};
 
+        // Construct query based on request parameters
         if (phoneNumber) query.phoneNumber = phoneNumber;
         if (uid) query.uid = uid;
         if (role) query.role = role;
@@ -76,13 +78,25 @@ exports.getEmployees = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
+        // Define fields to exclude
+        let projection = { password: 0, loginHistory: 0, LastSeenHistory: 0, collectedRepayments: 0 };
+
+        // Include sensitive data if requested
+        if (includeSensitiveData === 'true') {
+            projection = {}; // Show all fields, including password and loginHistory
+        }
+
+        // Fetch employees with projection
         const employees = await Employee.find(query)
             .sort({ updatedAt: -1 })
             .skip(skip)
-            .limit(Number(limit));
+            .limit(Number(limit))
+            .select(projection); // Apply projection here
 
+        // Get the total count of documents for pagination
         const total = await Employee.countDocuments(query);
 
+        // Send response
         res.json({
             status: 'success',
             data: employees,
@@ -95,6 +109,7 @@ exports.getEmployees = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
+
 
 //Soft Delete Employee
 exports.softDeleteEmployee = async (req, res) => {
@@ -187,3 +202,4 @@ exports.getTotalEmployees = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
+

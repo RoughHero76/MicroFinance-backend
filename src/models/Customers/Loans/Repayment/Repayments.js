@@ -2,11 +2,11 @@
 const mongoose = require('mongoose');
 
 const repaymentSchema = new mongoose.Schema({
-    repaymentSchedule: {
+    repaymentSchedule: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'RepaymentSchedule',
         required: true
-    },
+    }],
     amount: {
         type: Number,
         required: true,
@@ -18,7 +18,7 @@ const repaymentSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['Cash', 'Bank Transfer', 'Cheque', 'Other'],
+        enum: ['Cash', 'Bank Transfer', 'GooglePay', 'PhonePay', 'Paytm', 'Cheque', 'Other'],
         required: true
     },
     transactionId: {

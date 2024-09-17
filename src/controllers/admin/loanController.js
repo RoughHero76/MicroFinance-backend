@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { getStorage } = require('firebase-admin/storage');
 const Loan = require('../../models/Customers/Loans/LoanModel');
 const Repayment = require('../../models/Customers/Loans/Repayment/Repayments');
 const RepaymentSchedule = require('../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
@@ -272,6 +273,8 @@ exports.deleteLoan = async (req, res) => {
         await Penalty.deleteMany({ loan: loanId });
 
         await Loan.findByIdAndDelete(loanId);
+
+        //Delete Collected Collection History in Employee Collection
 
         res.json({ status: 'success', message: 'Loan deleted successfully' });
     } catch (error) {
@@ -605,10 +608,13 @@ exports.getRepaymentSchedule = async (req, res) => {
             });
         }
 
+        let loanStatus = loan.status;
+
         res.json({
             status: 'success',
             data: {
                 repaymentSchedule,
+                loanStatus,
                 currentPage: parseInt(page),
                 totalPages: Math.ceil(total / limitNum),
                 totalEntries: total
@@ -683,7 +689,7 @@ exports.getCountofLoans = async (req, res) => {
             res.json({ status: 'success', count });
             return;
         }
-        const count = await Loan.countDocuments();
+        const count = await Loan.countDocuments({ status: { $in: ['Active'] } });
         res.json({ status: 'success', count });
     } catch (error) {
         console.error(error);
@@ -695,7 +701,7 @@ exports.getTotalMarketDetails = async (req, res) => {
     try {
         let totalMarketAmmount = await Loan.aggregate([
             { $group: { _id: null, totalMarketAmmount: { $sum: '$loanAmount' } } }
-        ]);
+        ], { status: 'Active' });
 
         // Get the total ammount repaid
 
@@ -725,19 +731,19 @@ exports.getRepaymentHistoryToApprove = async (req, res) => {
     try {
         const { loanId, defaultDate, date, status, page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
+        console.log('getRepaymentHistoryToApprove req.query:', req.query);
 
         let query = {};
 
-        // Add loanId filter if provided
         if (loanId) {
             query.loan = loanId;
         }
+
 
         if (defaultDate == false && !date) {
             return res.status(400).json({ status: 'error', message: 'date is required if defaultDate is false' });
         }
 
-        // Add date filter
         if (defaultDate == false && date) {
             if (date) {
                 const startOfDay = new Date(date);
@@ -745,6 +751,8 @@ exports.getRepaymentHistoryToApprove = async (req, res) => {
                 const endOfDay = new Date(date);
                 endOfDay.setHours(23, 59, 59, 999);
                 query.paymentDate = { $gte: startOfDay, $lte: endOfDay };
+
+                console.log('query.paymentDate:', query.paymentDate);
             } else {
                 // If no date provided, default to today
                 const today = new Date();
@@ -753,14 +761,12 @@ exports.getRepaymentHistoryToApprove = async (req, res) => {
                 tomorrow.setDate(tomorrow.getDate() + 1);
                 query.paymentDate = { $gte: today, $lt: tomorrow };
             }
-
-            // Add status filter if provided
-            if (status) {
-                query.status = status;
-            }
         }
-
-        console.log(query);
+        if (status) {
+            query.status = status;
+        } else {
+            query.status = 'Pending';
+        }
         const repayments = await Repayment.find(query)
             .sort({ paymentDate: 1 })
             .populate('collectedBy', 'fname lname')
@@ -834,3 +840,387 @@ exports.approveRepaymentHistory = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 }
+
+
+exports.assignLoanToEmployee = async (req, res) => {
+    try {
+        const { loanId, employeeId } = req.body;
+        if (!loanId || !employeeId) {
+            return res.status(400).json({ status: 'error', message: 'loanId and employeeId are required' });
+        }
+
+        const loan = await Loan.findById(loanId);
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        const employee = await Employee.findById(employeeId);
+        if (!employee) {
+            return res.status(404).json({ status: 'error', message: 'Employee not found' });
+        }
+
+        loan.assignedTo = employeeId;
+        await loan.save();
+
+        res.json({ status: 'success', message: 'Loan assigned to employee successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
+
+// Improved applyPenaltyToALoanInstallment function
+exports.applyPenaltyToALoanInstallment = async (req, res) => {
+    try {
+        console.log('Request body:', req.body);
+        const { loanId, penaltyAmount, repaymentScheduleId } = req.body;
+
+        if (!loanId || !repaymentScheduleId || !penaltyAmount) {
+            return res.status(400).json({ status: 'error', message: 'Missing required fields' });
+        }
+
+        const loan = await Loan.findById(loanId);
+
+        if (!loan) {
+            console.log('Loan not found');
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        if (loan.status === 'Closed') {
+            console.log('Loan already closed');
+            return res.status(400).json({ status: 'error', message: 'Loan already closed' });
+        }
+
+        const repaymentSchedule = await RepaymentSchedule.findById(repaymentScheduleId);
+        if (!repaymentSchedule || repaymentSchedule.loan.toString() !== loanId) {
+            console.log('Repayment schedule not found or does not belong to the specified loan');
+            return res.status(404).json({ status: 'error', message: 'Repayment schedule not found or does not belong to the specified loan' });
+        }
+
+        if (repaymentSchedule.penaltyApplied) {
+            console.log('Penalty already applied');
+            return res.status(400).json({ status: 'error', message: 'Penalty already applied' });
+        }
+
+        const penalty = new Penalty({
+            loan: loanId,
+            repaymentSchedule: repaymentScheduleId,
+            amount: penaltyAmount,
+            reason: 'Late payment',
+        });
+
+        console.log('Saving penalty: ', penalty);
+        await penalty.save();
+
+        repaymentSchedule.penaltyApplied = true;
+        repaymentSchedule.penalty = penalty._id;
+        repaymentSchedule.status = 'Overdue';
+
+        repaymentSchedule.penaltyAmount = penaltyAmount;
+        console.log('Saving repayment schedule: ', repaymentSchedule);
+        await repaymentSchedule.save();
+
+        loan.totalPenaltyAmmount += penaltyAmount;
+        loan.totalPenalty.push(penalty._id);
+        loan.outstandingAmount += penaltyAmount;
+        console.log('Saving loan: ', loan);
+        await loan.save();
+
+        res.status(200).json({ status: 'success', message: 'Penalty applied successfully', data: penalty });
+    } catch (error) {
+        console.error('Penalty application error:', error);
+        res.status(500).json({ status: 'error', message: 'Error in applying penalty' });
+    }
+};
+
+
+exports.removePenaltyFromALoanInstallment = async (req, res) => {
+    try {
+        console.log('Request body:', req.body);
+        const { loanId, repaymentScheduleId } = req.body;
+
+        if (!loanId || !repaymentScheduleId) {
+            return res.status(400).json({ status: 'error', message: 'Missing required fields' });
+        }
+
+        const loan = await Loan.findById(loanId);
+        console.log('Loan before modification:', JSON.stringify(loan, null, 2));
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        const repaymentSchedule = await RepaymentSchedule.findById(repaymentScheduleId);
+        console.log('Repayment schedule before modification:', JSON.stringify(repaymentSchedule, null, 2));
+        if (!repaymentSchedule || repaymentSchedule.loan.toString() !== loanId) {
+            return res.status(404).json({ status: 'error', message: 'Repayment schedule not found or does not belong to the specified loan' });
+        }
+
+        if (!repaymentSchedule.penaltyApplied) {
+            return res.status(400).json({ status: 'error', message: 'Penalty not applied' });
+        }
+
+        //const penaltyAmount = repaymentSchedule.penaltyAmount || 0;
+        const penaltyId = repaymentSchedule.penalty;
+
+        const peneltyDoc = await Penalty.findById(penaltyId);
+        if (!peneltyDoc) {
+            return res.status(404).json({ status: 'error', message: 'Penalty not found' });
+        }
+
+        const penaltyAmount = peneltyDoc.amount;
+
+
+        // Remove the penalty document if it exists
+        if (penaltyId) {
+            const penalty = await Penalty.findByIdAndDelete(penaltyId);
+            console.log('Penalty removed:', JSON.stringify(penalty, null, 2));
+        }
+
+        // Calculate total repayment for this schedule
+        const totalRepayment = await Repayment.aggregate([
+            { $match: { repaymentSchedule: repaymentSchedule._id } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+
+        const totalRepaidAmount = totalRepayment.length > 0 ? totalRepayment[0].total : 0;
+        console.log('Total repaid amount:', totalRepaidAmount);
+
+        // Update repayment schedule
+        repaymentSchedule.penaltyApplied = false;
+        repaymentSchedule.penalty = null;
+        repaymentSchedule.penaltyAmount = 0;
+
+        // Determine the status based on repayment
+        if (totalRepaidAmount >= repaymentSchedule.originalAmount) {
+            repaymentSchedule.status = 'Paid';
+        } else if (totalRepaidAmount > 0) {
+            repaymentSchedule.status = 'Partially Paid';
+        } else if (new Date(repaymentSchedule.dueDate) < new Date()) {
+            repaymentSchedule.status = 'Overdue';
+        } else {
+            repaymentSchedule.status = 'Pending';
+        }
+
+        console.log('Repayment schedule before saving:', JSON.stringify(repaymentSchedule, null, 2));
+        await repaymentSchedule.save();
+        console.log('Repayment schedule after saving:', JSON.stringify(repaymentSchedule, null, 2));
+
+        // Update the loan document
+        const previousTotalPenaltyAmount = loan.totalPenaltyAmmount;
+        const previousOutstandingAmount = loan.outstandingAmount;
+
+
+        loan.totalPenaltyAmmount = Math.max(0, loan.totalPenaltyAmmount - penaltyAmount);
+        loan.totalPenalty = loan.totalPenalty.filter(p => p && p.toString() !== penaltyId.toString());
+        loan.outstandingAmount = Math.max(0, loan.outstandingAmount - penaltyAmount);
+
+        console.log('Loan before saving:', {
+            previousTotalPenaltyAmount,
+            newTotalPenaltyAmount: loan.totalPenaltyAmmount,
+            previousOutstandingAmount,
+            newOutstandingAmount: loan.outstandingAmount,
+            totalPenalty: loan.totalPenalty
+        });
+
+        const updatedLoan = await Loan.findByIdAndUpdate(
+            loanId,
+            {
+                $set: {
+                    totalPenaltyAmmount: loan.totalPenaltyAmmount,
+                    outstandingAmount: loan.outstandingAmount,
+                    totalPenalty: loan.totalPenalty
+                }
+            },
+            { new: true, runValidators: true }
+        );
+
+        console.log('Loan after update:', JSON.stringify(updatedLoan, null, 2));
+
+        if (!updatedLoan) {
+            throw new Error('Failed to update loan document');
+        }
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Penalty removed successfully',
+            removedPenaltyId: penaltyId,
+            removedPenaltyAmount: penaltyAmount,
+            updatedLoan: {
+                totalPenaltyAmmount: updatedLoan.totalPenaltyAmmount,
+                totalPenalty: updatedLoan.totalPenalty,
+                outstandingAmount: updatedLoan.outstandingAmount
+            },
+            updatedRepaymentSchedule: {
+                status: repaymentSchedule.status,
+                penaltyApplied: repaymentSchedule.penaltyApplied,
+                penaltyAmount: repaymentSchedule.penaltyAmount
+            }
+        });
+    } catch (error) {
+        console.error('Penalty removal error:', error);
+        res.status(500).json({ status: 'error', message: 'Error in removing penalty' });
+    }
+};
+
+exports.closeLoan = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { loanId, totalRemainingAmountCustomerIsPaying, deleteLoanDocuments } = req.body;
+
+        console.log(`Closing loan with id: ${loanId}`);
+
+        // Search the loan with Id
+        const loan = await Loan.findById(loanId).session(session);
+        if (!loan) {
+            throw new Error('Loan not found');
+        }
+
+        console.log(`Found loan with id: ${loan._id}`);
+
+        // Check if totalRemainingAmountCustomerIsPaying is greater than outstandingAmount
+        if (totalRemainingAmountCustomerIsPaying > loan.outstandingAmount) {
+            throw new Error('Payment amount exceeds outstanding amount');
+        }
+
+        const originalPaymentAmount = totalRemainingAmountCustomerIsPaying;
+        let remainingAmount = totalRemainingAmountCustomerIsPaying;
+
+        console.log(`Total amount to be paid: ${originalPaymentAmount}`);
+
+        // Handle RepaymentSchedules
+        const repaymentSchedules = await RepaymentSchedule.find({ loan: loanId }).sort('dueDate').session(session);
+        for (const schedule of repaymentSchedules) {
+            if (['Paid', 'AdvancePaid', 'OverduePaid'].includes(schedule.status)) {
+                continue;
+            }
+
+            const amountDue = schedule.status === 'PartiallyPaid'
+                ? schedule.originalAmount - schedule.amount
+                : schedule.amount;
+
+            if (remainingAmount >= amountDue) {
+                schedule.status = 'Paid';
+                schedule.amount = schedule.originalAmount || schedule.amount;
+                remainingAmount -= amountDue;
+            } else if (remainingAmount > 0) {
+                schedule.status = 'PartiallyPaid';
+                schedule.originalAmount = schedule.originalAmount || schedule.amount;
+                schedule.amount += remainingAmount;
+                remainingAmount = 0;
+            } else {
+                schedule.status = 'Waived';
+            }
+            await schedule.save({ session });
+        }
+
+        // Handle penalties
+        const pendingPenalties = await Penalty.find({ loan: loanId, status: 'Pending' }).session(session);
+        for (const penalty of pendingPenalties) {
+            if (remainingAmount >= penalty.amount) {
+                penalty.status = 'Paid';
+                remainingAmount -= penalty.amount;
+            } else {
+                penalty.status = 'Waived';
+            }
+            await penalty.save({ session });
+        }
+
+        console.log(`Updated penalties and repayment schedules`);
+
+        // Update loan status and payments
+        loan.status = 'Closed';
+        loan.totalPaid += originalPaymentAmount;
+        loan.outstandingAmount -= originalPaymentAmount;
+        loan.loanClosedDate = new Date();
+
+        console.log(`Updated loan with id: ${loan._id}`);
+
+        // Create a repayment for the amount paid
+        const repayment = new Repayment({
+            repaymentSchedule: repaymentSchedules.map(schedule => schedule._id),
+            amount: originalPaymentAmount,
+            paymentDate: new Date(),
+            paymentMethod: 'Other', // You might want to add this as a parameter in req.body
+            status: 'Approved',
+            loan: loan._id,
+            balanceAfterPayment: loan.outstandingAmount,
+        });
+
+        // Validate the repayment before saving
+        const validationError = repayment.validateSync();
+        if (validationError) {
+            throw new Error(`Repayment validation failed: ${validationError.message}`);
+        }
+
+        await repayment.save({ session });
+
+        console.log(`Created repayment with id: ${repayment._id}`);
+
+        // Handle document deletion if required
+        if (deleteLoanDocuments) {
+            const bucket = getStorage().bucket();
+            const customerUid = await Customer.findById(loan.customer).select('uid').lean();
+
+            const deleteFileFromStorage = async (filePath) => {
+                if (!filePath) return;
+                try {
+                    await bucket.file(filePath).delete();
+                    console.log(`Successfully deleted file: ${filePath}`);
+                } catch (error) {
+                    console.error(`Failed to delete file: ${filePath}`, error);
+                }
+            };
+
+            // Delete stamp paper and promissory note photos
+            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/stampPaperPhoto`);
+            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/promissoryNotePhoto`);
+            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/blankPaper`);
+
+            // Delete cheque photos
+            for (let i = 0; i < loan.documents.cheques.length; i++) {
+                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/cheques/cheque_${i + 1}`);
+            }
+
+            // Delete government ID photos
+            for (const id of loan.documents.governmentIds) {
+                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/governmentIds/${id.type}_front`);
+                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/governmentIds/${id.type}_back`);
+            }
+
+            // Clear document fields in the loan
+            loan.documents = {
+                stampPaper: null,
+                promissoryNote: null,
+                stampPaperPhotoLink: null,
+                promissoryNotePhotoLink: null,
+                blankPaper: null,
+                cheques: [],
+                governmentIds: []
+            };
+        }
+
+        await loan.save({ session });
+
+        console.log(`Updated loan documents`);
+
+        // Update customer's activeLoans
+        await Customer.findByIdAndUpdate(
+            loan.customer,
+            { $pull: { activeLoans: loan._id } },
+            { session }
+        );
+
+        console.log(`Updated customer with id: ${loan.customer}`);
+
+        await session.commitTransaction();
+        res.status(200).json({ status: 'success', message: 'Loan closed successfully' });
+    } catch (error) {
+        console.error('Loan closure error:', error);
+        await session.abortTransaction();
+        res.status(500).json({ status: 'error', message: error.message });
+    } finally {
+        session.endSession();
+    }
+};

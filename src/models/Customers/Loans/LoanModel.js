@@ -80,6 +80,10 @@ const loanSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
+    loanClosedDate: {
+        type: Date
+    
+    },
     repaymentAmountPerInstallment: {
         type: Number,
         required: true,
@@ -95,9 +99,9 @@ const loanSchema = new mongoose.Schema({
     },
     totalPenalty: {
         type: [{
-                type: mongoose.Schema.Types.ObjectId,
-                ref: 'Penalty'
-            }]
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Penalty'
+        }]
     },
     totalPenaltyAmmount: {
         type: Number,
@@ -107,6 +111,10 @@ const loanSchema = new mongoose.Schema({
         type: String,
         enum: ['Personal', 'Business', 'Other'],
         default: 'Personal'
+    },
+    assignedTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Employee'
     }
 }, { timestamps: true });
 

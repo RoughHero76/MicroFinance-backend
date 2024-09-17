@@ -13,7 +13,11 @@ const {
   rejectLoan,
   getRepaymentHistory,
   getRepaymentHistoryToApprove,
-  approveRepaymentHistory
+  approveRepaymentHistory,
+  assignLoanToEmployee,
+  applyPenaltyToALoanInstallment,
+  removePenaltyFromALoanInstallment,
+  closeLoan
 } = require('../../../controllers/admin/loanController');
 const { verifyToken } = require("../../../helpers/token");
 
@@ -22,14 +26,18 @@ const { verifyToken } = require("../../../helpers/token");
 router.get('/', verifyToken, getLoans);
 router.post('/', verifyToken, createLoan);
 router.delete('/', verifyToken, deleteLoan);
+router.post('/close', verifyToken, closeLoan);
 router.get('/approve', verifyToken, approveLoan);
 router.get('/reject', verifyToken, rejectLoan);
+router.post('/assign', verifyToken, assignLoanToEmployee);
 router.get('/count/total', verifyToken, getCountofLoans);
 router.get('/count/market/details', verifyToken, getTotalMarketDetails);
 router.get('/repayment/schedule', verifyToken, getRepaymentSchedule);
 router.get('/repayment/history', verifyToken, getRepaymentHistory);
 router.get('/repayment/history/approve', verifyToken, getRepaymentHistoryToApprove);
 router.post('/repayment/history/approve', verifyToken, approveRepaymentHistory);
+router.post('/apply/planalty', verifyToken, applyPenaltyToALoanInstallment);
+router.post('/remove/planalty', verifyToken, removePenaltyFromALoanInstallment);
 
 
 

@@ -3,11 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
-
-
-
 const connectDB = require('./src/config/databaseConfig');
-
+const routes = require('./src');
 
 dotenv.config();
 
@@ -16,50 +13,37 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-connectDB();
+const MAX_RETRIES = 5;
+const RETRY_INTERVAL = 5000; // 5 seconds
 
-//Admin
-const adminRoutes = require('./src/routes/admin/authRoutes');
-const customerCRUD = require('./src/routes/admin/customer/customerCRUD');
-const loanRoutes = require('./src/routes/admin/loan/loanRoutes');
-const employeeRoutesCRUD = require('./src/routes/admin/employee/employeeRoutes');
+function startServer(retryCount = 0) {
+  connectDB().then(() => {
+    console.log('Connected to MongoDB');
+    
+    // Use routes
+    app.use('/api', routes);
 
+    app.use(express.static(path.join(__dirname, 'public')));
 
-//Employee
+    app.get('/', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    });
 
-const employeeAuthRoutes = require('./src/routes/employee/authRoutes');
-const employeeLoanRoutes = require('./src/routes/employee/loans/loanRoutes');
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  }).catch((error) => {
+    console.error('Failed to connect to MongoDB:', error);
+    
+    if (retryCount < MAX_RETRIES) {
+      console.log(`Retrying connection in ${RETRY_INTERVAL / 1000} seconds...`);
+      setTimeout(() => startServer(retryCount + 1), RETRY_INTERVAL);
+    } else {
+      console.error('Max retries reached. Exiting...');
+      process.exit(1);
+    }
+  });
+}
 
-//Shared
-const sharedRoutes = require('./src/routes/shared/sharedRoutes');
-
-//Admin Routes
-
-app.use('/api/admin', adminRoutes);
-app.use('/api/admin/customer', customerCRUD);
-app.use('/api/admin/loan', loanRoutes);
-app.use('/api/admin/employee', employeeRoutesCRUD);
-
-//Employee Routes
-
-app.use('/api/employee', employeeAuthRoutes);
-app.use('/api/employee/loan', employeeLoanRoutes);
-
-//Shared Routes
-
-app.use('/api/shared', sharedRoutes);
-
-
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}`);
-});
-
-
+startServer();

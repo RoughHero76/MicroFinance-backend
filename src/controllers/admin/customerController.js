@@ -76,7 +76,7 @@ exports.getCustomers = async (req, res) => {
             query.accountStatus = 'true';
         }
 
-        let loanFields = 'loanAmount loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments status';
+        let loanFields = 'loanAmount loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments assignedTo status';
         if (fullDetails === 'true') {
             loanFields = '';
         }
@@ -89,7 +89,11 @@ exports.getCustomers = async (req, res) => {
             .limit(Number(limit))
             .populate({
                 path: 'loans',
-                select: loanFields
+                select: loanFields,
+                populate: {
+                    path: 'assignedTo',
+                    select: 'uid fname lname'
+                }
             });
 
         //Go through customer profilePic and replace it signed url

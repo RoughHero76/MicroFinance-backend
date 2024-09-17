@@ -21,7 +21,7 @@ const repaymentScheduleSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Paid', 'PartiallyPaid', 'Overdue'],
+        enum: ['Pending', 'Paid', 'PartiallyPaid', 'Overdue', 'AdvancePaid', 'OverduePaid', 'Waived'],
         default: 'Pending'
     },
     penaltyApplied: {
@@ -58,10 +58,6 @@ repaymentScheduleSchema.virtual('isOverdue').get(function () {
     return this.status === 'Overdue';
 });
 
-// Add a method
-repaymentScheduleSchema.methods.calculatePenalty = function () {
-    // Implement penalty calculation logic here
-};
 
 // Add an index
 repaymentScheduleSchema.index({ loan: 1, dueDate: 1 });

@@ -6,10 +6,14 @@ const Penalty = require("../../models/Customers/Loans/Repayment/PenaltyModel");
 const Customer = require("../../models/Customers/profile/CustomerModel");
 const moment = require('moment-timezone');
 const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
+const mongoose = require('mongoose');
 
 exports.collectionCountTody = async (req, res) => {
     try {
         let { date } = req.query;
+        const id = req._id;
+
+        console.log('ID :', id);
 
         // If no date is provided, use the current date in IST
         if (!date) {
@@ -25,12 +29,37 @@ exports.collectionCountTody = async (req, res) => {
         const endOfDay = moment(date).tz('Asia/Kolkata').endOf('day').toDate();
 
         // Get the count of collections due today
-        const collectionCount = await RepaymentSchedule.countDocuments({
-            dueDate: { $gte: startOfDay, $lte: endOfDay },
-            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
-        });
+        const collectionCount = await RepaymentSchedule.aggregate([
+            {
+                $match: {
+                    dueDate: { $gte: startOfDay, $lte: endOfDay },
+                    status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'loans',
+                    localField: 'loan',
+                    foreignField: '_id',
+                    as: 'loanDetails'
+                }
+            },
+            {
+                $unwind: '$loanDetails'
+            },
+            {
+                $match: {
+                    'loanDetails.assignedTo': new mongoose.Types.ObjectId(id)
+                }
+            },
+            {
+                $count: 'totalCount'
+            }
+        ]);
 
-        res.status(200).json({ status: 'success', count: collectionCount });
+        const count = collectionCount.length > 0 ? collectionCount[0].totalCount : 0;
+
+        res.status(200).json({ status: 'success', count });
     } catch (error) {
         console.error('Collection error:', error);
         res.status(500).json({ status: 'error', message: "Error getting today's collection count" });
@@ -38,7 +67,10 @@ exports.collectionCountTody = async (req, res) => {
 };
 exports.collectionsToBeCollectedToday = async (req, res) => {
     try {
+        const id = req._id;
         let { date } = req.query;
+
+        console.log('ID :', id);
 
         // If no date is provided, use the current date in IST
         if (!date) {
@@ -53,20 +85,60 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
         const startOfDay = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
         const endOfDay = moment(date).tz('Asia/Kolkata').endOf('day').toDate();
 
-        console.log(startOfDay, endOfDay);
-
-
-        const collections = await RepaymentSchedule.find({
-            dueDate: { $gte: startOfDay, $lte: endOfDay },
-            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
-        }).populate({
-            path: 'loan',
-            select: 'customer loanAmount',
-            populate: {
-                path: 'customer',
-                select: 'fname lname phoneNumber'
+        const collections = await RepaymentSchedule.aggregate([
+            {
+                $match: {
+                    dueDate: { $gte: startOfDay, $lte: endOfDay },
+                    status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'loans',
+                    localField: 'loan',
+                    foreignField: '_id',
+                    as: 'loanDetails'
+                }
+            },
+            {
+                $unwind: '$loanDetails'
+            },
+            {
+                $match: {
+                    'loanDetails.assignedTo': new mongoose.Types.ObjectId(id)
+                }
+            },
+            {
+                $lookup: {
+                    from: 'customers',
+                    localField: 'loanDetails.customer',
+                    foreignField: '_id',
+                    as: 'customerDetails'
+                }
+            },
+            {
+                $unwind: '$customerDetails'
+            },
+            {
+                $project: {
+                    _id: 1,
+                    dueDate: 1,
+                    amount: 1,
+                    status: 1,
+                    loanInstallmentNumber: 1,
+                    loan: {
+                        _id: '$loanDetails._id',
+                        loanAmount: '$loanDetails.loanAmount',
+                        customer: {
+                            _id: '$customerDetails._id',
+                            fname: '$customerDetails.fname',
+                            lname: '$customerDetails.lname',
+                            phoneNumber: '$customerDetails.phoneNumber'
+                        }
+                    }
+                }
             }
-        });
+        ]);
 
         res.status(200).json({ status: 'success', data: collections });
     } catch (error) {
@@ -74,54 +146,131 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
         res.status(500).json({ status: 'error', message: "Error getting today's collections" });
     }
 };
-
 exports.payACustomerInstallment = async (req, res) => {
     try {
         const { loanId, repaymentScheduleId, amount, paymentMethod, transactionId } = req.body;
+        const collectedBy = req._id;
 
-        console.log('Req User', req._id);
         const loan = await Loan.findById(loanId);
         if (!loan) {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
         }
 
-        const repaymentSchedule = await RepaymentSchedule.findOne({
-            loan: loanId,
-            _id: repaymentScheduleId,
-            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
-        }).sort({ dueDate: 1 });
+        let remainingAmount = amount;
+        let processedSchedules = [];
+        let processedAmount = 0;
 
-        if (!repaymentSchedule) {
-            return res.status(404).json({ status: 'error', message: 'No pending repayment schedule found' });
-        }
-
+        // Create a single repayment record for all processed schedules
         const newRepayment = new Repayment({
-            repaymentSchedule: repaymentSchedule._id,
-            amount,
+            repaymentSchedule: [],
+            amount: 0,
             paymentMethod,
             transactionId,
             loan: loanId,
-            balanceAfterPayment: loan.outstandingAmount - amount,
-            collectedBy: req._id
+            balanceAfterPayment: loan.outstandingAmount,
+            collectedBy
         });
 
+        // Function to process a single repayment schedule
+        const processSchedule = async (schedule) => {
+            const originalAmount = schedule.originalAmount || schedule.amount;
+            const amountToPay = Math.min(remainingAmount, originalAmount - (schedule.amount - originalAmount));
+
+            schedule.amount = originalAmount; // Always set amount to originalAmount
+            schedule.repayments.push(newRepayment._id);
+
+            if (amountToPay >= originalAmount) {
+                schedule.status = schedule.status === 'Overdue' ? 'OverduePaid' : 'Paid';
+            } else if (amountToPay > 0) {
+                schedule.status = 'PartiallyPaid';
+            }
+
+            if (!schedule.paymentDate) {
+                schedule.paymentDate = Date.now();
+            }
+
+            await schedule.save();
+
+            loan.totalPaid += amountToPay;
+            loan.outstandingAmount -= amountToPay;
+            remainingAmount -= amountToPay;
+
+            processedSchedules.push({
+                scheduleId: schedule._id,
+                amountPaid: amountToPay,
+                status: schedule.status
+            });
+
+            return amountToPay;
+        };
+
+        // Process the specified repayment schedule first
+        const currentSchedule = await RepaymentSchedule.findOne({
+            loan: loanId,
+            _id: repaymentScheduleId,
+            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+        });
+
+        if (!currentSchedule) {
+            return res.status(404).json({ status: 'error', message: 'No pending repayment schedule found' });
+        }
+
+        processedAmount += await processSchedule(currentSchedule);
+
+        // If there's remaining amount, process overdue and partially paid schedules
+        if (remainingAmount > 0) {
+            const overdueSchedules = await RepaymentSchedule.find({
+                loan: loanId,
+                status: { $in: ['Overdue', 'PartiallyPaid'] },
+                _id: { $ne: repaymentScheduleId }
+            }).sort({ dueDate: 1 });
+
+            for (const schedule of overdueSchedules) {
+                if (remainingAmount <= 0) break;
+                processedAmount += await processSchedule(schedule);
+            }
+        }
+
+        // If there's still remaining amount, process future schedules
+        if (remainingAmount > 0) {
+            const futureSchedules = await RepaymentSchedule.find({
+                loan: loanId,
+                status: 'Pending',
+                dueDate: { $gt: new Date() }
+            }).sort({ dueDate: 1 });
+
+            for (const schedule of futureSchedules) {
+                if (remainingAmount <= 0) break;
+                processedAmount += await processSchedule(schedule);
+                if (schedule.status === 'Paid') {
+                    schedule.status = 'AdvancePaid';
+                    await schedule.save();
+                }
+            }
+        }
+
+        // Update the repayment record with the final processed amount and schedules
+        newRepayment.amount = processedAmount;
+        newRepayment.repaymentSchedule = processedSchedules.map(ps => ps.scheduleId);
+        newRepayment.balanceAfterPayment = loan.outstandingAmount;
         await newRepayment.save();
 
-        repaymentSchedule.status = amount >= repaymentSchedule.amount ? 'Paid' : 'PartiallyPaid';
-        repaymentSchedule.paymentDate = Date.now();
-        await repaymentSchedule.save();
-
-        loan.totalPaid += amount;
-        loan.outstandingAmount -= amount;
         await loan.save();
 
-        res.status(200).json({ status: 'success', message: 'Payment processed successfully', data: newRepayment });
+        res.status(200).json({
+            status: 'success',
+            message: 'Payment processed successfully',
+            data: {
+                totalPaid: processedAmount,
+                processedSchedules,
+                remainingAmount
+            }
+        });
     } catch (error) {
         console.error('Payment error:', error);
         res.status(500).json({ status: 'error', message: 'Error in paying installment' });
     }
 };
-
 exports.getCustomers = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
@@ -258,7 +407,6 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Repayment schedule not found or does not belong to the specified loan' });
         }
 
-        //Check if penalty is already applied
         if (repaymentSchedule.penaltyApplied) {
             return res.status(400).json({ status: 'error', message: 'Penalty already applied' });
         }
@@ -268,7 +416,6 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
             repaymentSchedule: repaymentScheduleId,
             amount: penaltyAmount,
             reason: 'Late payment',
-
         });
 
         await penalty.save();
@@ -276,9 +423,10 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
         repaymentSchedule.penaltyApplied = true;
         repaymentSchedule.penalty = penalty._id;
         repaymentSchedule.status = 'Overdue';
+        repaymentSchedule.penaltyAmount = penaltyAmount;
         await repaymentSchedule.save();
 
-        loan.totalPenaltyAmmount += penaltyAmount;
+        loan.totalPenaltyAmmount += penaltyAmount; 
         loan.totalPenalty.push(penalty._id);
         loan.outstandingAmount += penaltyAmount;
         await loan.save();

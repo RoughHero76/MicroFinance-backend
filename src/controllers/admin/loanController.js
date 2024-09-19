@@ -699,27 +699,34 @@ exports.getCountofLoans = async (req, res) => {
 
 exports.getTotalMarketDetails = async (req, res) => {
     try {
-        let totalMarketAmmount = await Loan.aggregate([
-            { $group: { _id: null, totalMarketAmmount: { $sum: '$loanAmount' } } }
-        ], { status: 'Active' });
+        const activeOrApprovedFilter = { status: { $in: ['Active', 'Approved'] } };
 
-        // Get the total ammount repaid
-
-        const totalMarketAmmountRepaid = await Loan.aggregate([
-            { $group: { _id: null, totalMarketAmmountRepaid: { $sum: '$totalPaid' } } }
+        let totalMarketAmount = await Loan.aggregate([
+            { $match: activeOrApprovedFilter },
+            { $group: { _id: null, totalMarketAmount: { $sum: '$loanAmount' } } }
         ]);
 
-        //Handle if there no loans so thus there wont be market ammout and etc
+        // Get the total amount repaid for Active or Approved loans
+        let totalMarketAmountRepaid = await Loan.aggregate([
+            { $match: activeOrApprovedFilter },
+            { $group: { _id: null, totalMarketAmountRepaid: { $sum: '$totalPaid' } } }
+        ]);
 
-        if (totalMarketAmmount.length === 0) {
-            totalMarketAmmount[0] = { totalMarketAmmount: 0 };
+        // Handle if there are no loans
+        if (totalMarketAmount.length === 0) {
+            totalMarketAmount = [{ totalMarketAmount: 0 }];
         }
-        if (totalMarketAmmountRepaid.length === 0) {
-            totalMarketAmmountRepaid[0] = { totalMarketAmmountRepaid: 0 };
+        if (totalMarketAmountRepaid.length === 0) {
+            totalMarketAmountRepaid = [{ totalMarketAmountRepaid: 0 }];
         }
 
-
-        res.json({ status: 'success', data: { totalMarketAmmount: totalMarketAmmount[0].totalMarketAmmount, totalMarketAmmountRepaid: totalMarketAmmountRepaid[0].totalMarketAmmountRepaid } });
+        res.json({
+            status: 'success',
+            data: {
+                totalMarketAmount: totalMarketAmount[0].totalMarketAmount,
+                totalMarketAmountRepaid: totalMarketAmountRepaid[0].totalMarketAmountRepaid
+            }
+        });
 
     } catch (error) {
         console.error(error);
@@ -1069,15 +1076,11 @@ exports.closeLoan = async (req, res) => {
     try {
         const { loanId, totalRemainingAmountCustomerIsPaying, deleteLoanDocuments } = req.body;
 
-        console.log(`Closing loan with id: ${loanId}`);
-
         // Search the loan with Id
         const loan = await Loan.findById(loanId).session(session);
         if (!loan) {
             throw new Error('Loan not found');
         }
-
-        console.log(`Found loan with id: ${loan._id}`);
 
         // Check if totalRemainingAmountCustomerIsPaying is greater than outstandingAmount
         if (totalRemainingAmountCustomerIsPaying > loan.outstandingAmount) {
@@ -1086,8 +1089,6 @@ exports.closeLoan = async (req, res) => {
 
         const originalPaymentAmount = totalRemainingAmountCustomerIsPaying;
         let remainingAmount = totalRemainingAmountCustomerIsPaying;
-
-        console.log(`Total amount to be paid: ${originalPaymentAmount}`);
 
         // Handle RepaymentSchedules
         const repaymentSchedules = await RepaymentSchedule.find({ loan: loanId }).sort('dueDate').session(session);
@@ -1127,15 +1128,11 @@ exports.closeLoan = async (req, res) => {
             await penalty.save({ session });
         }
 
-        console.log(`Updated penalties and repayment schedules`);
-
         // Update loan status and payments
         loan.status = 'Closed';
         loan.totalPaid += originalPaymentAmount;
         loan.outstandingAmount -= originalPaymentAmount;
         loan.loanClosedDate = new Date();
-
-        console.log(`Updated loan with id: ${loan._id}`);
 
         // Create a repayment for the amount paid
         const repayment = new Repayment({
@@ -1156,13 +1153,13 @@ exports.closeLoan = async (req, res) => {
 
         await repayment.save({ session });
 
-        console.log(`Created repayment with id: ${repayment._id}`);
-
         // Handle document deletion if required
         if (deleteLoanDocuments) {
             const bucket = getStorage().bucket();
-            const customerUid = await Customer.findById(loan.customer).select('uid').lean();
+            const customer = await Customer.findById(loan.customer);
+            const customerUid = customer.uid;
 
+            // Function to delete file with correct path
             const deleteFileFromStorage = async (filePath) => {
                 if (!filePath) return;
                 try {
@@ -1173,20 +1170,20 @@ exports.closeLoan = async (req, res) => {
                 }
             };
 
-            // Delete stamp paper and promissory note photos
-            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/stampPaperPhoto`);
-            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/promissoryNotePhoto`);
-            await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/blankPaper`);
+            // Example usage in the deletion code
+            await deleteFileFromStorage(`${customerUid}/${loan._id}/stampPaperPhoto`);
+            await deleteFileFromStorage(`${customerUid}/${loan._id}/promissoryNotePhoto`);
+            await deleteFileFromStorage(`${customerUid}/${loan._id}/blankPaper`);
 
-            // Delete cheque photos
+            // For cheques
             for (let i = 0; i < loan.documents.cheques.length; i++) {
-                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/cheques/cheque_${i + 1}`);
+                await deleteFileFromStorage(`${customerUid}/${loan._id}/cheques/cheque_${i + 1}`);
             }
 
-            // Delete government ID photos
+            // For government IDs
             for (const id of loan.documents.governmentIds) {
-                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/governmentIds/${id.type}_front`);
-                await deleteFileFromStorage(`${customerUid.uid}/${loan._id}/governmentIds/${id.type}_back`);
+                await deleteFileFromStorage(`${customerUid}/${loan._id}/governmentIds/${id.type}_front`);
+                await deleteFileFromStorage(`${customerUid}/${loan._id}/governmentIds/${id.type}_back`);
             }
 
             // Clear document fields in the loan
@@ -1203,16 +1200,12 @@ exports.closeLoan = async (req, res) => {
 
         await loan.save({ session });
 
-        console.log(`Updated loan documents`);
-
         // Update customer's activeLoans
         await Customer.findByIdAndUpdate(
             loan.customer,
             { $pull: { activeLoans: loan._id } },
             { session }
         );
-
-        console.log(`Updated customer with id: ${loan.customer}`);
 
         await session.commitTransaction();
         res.status(200).json({ status: 'success', message: 'Loan closed successfully' });

@@ -74,25 +74,21 @@ const employeeSchema = new mongoose.Schema({
         type: String
     },
 
-    lastSeen: {
-        type: Date
-    },
-    LastSeenHistory: [{
-        type: Date,
-        
-    }],
     collectedRepayments: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Repayment'
     }],
 
-    lastLogin: {
-        type: Date, default: Date.now
+    loginHistory: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LoginHistory"
     },
 
-    loginHistory: {
-        type: Array, default: []
+    lastSeen: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LastSeen"
     }
+
 }, { timestamps: true });
 
 // Pre-save middleware to hash password and generate UID

@@ -7,7 +7,6 @@ const {
     getAdminProfile,
     updateAdminProfile,
     updateAdminPassword,
-    loginHistory,
 } = require('../../controllers/admin/authController');
 
 // Public routes
@@ -18,7 +17,6 @@ router.post('/login', loginAdmin);
 router.get('/profile', verifyToken, getAdminProfile);
 router.put('/profile', verifyToken, updateAdminProfile);
 router.put('/password', verifyToken, updateAdminPassword);
-router.get('/login/history', verifyToken, loginHistory);
 
 
 module.exports = router;

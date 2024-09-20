@@ -46,7 +46,30 @@ async function verifyToken(req, res, next) {
     });
 }
 
+
+
+async function useRoleAdmin(req, res, next) {
+    if (req.user.role === 'admin') {
+        next();
+    } else {
+        return res.status(403).json({ message: 'Unauthorized' });
+    }
+}
+
+async function userRoleEmployee(req, res, next) {
+    if (req.user.role === 'employee') {
+        next();
+    } else if (req.user.role === 'admin') {
+        next();
+    }
+    else {
+        return res.status(403).json({ message: 'Unauthorized' });
+    }
+}
+
 module.exports = {
     generateToken,
-    verifyToken
+    verifyToken,
+    useRoleAdmin,
+    userRoleEmployee
 };

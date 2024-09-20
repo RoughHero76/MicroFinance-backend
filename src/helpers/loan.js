@@ -89,7 +89,7 @@ function generateRepaymentSchedule(loan) {
             status: 'Pending'
         });
 
-        console.log(`Installment ${i + 1}: Due Date: ${dueDate}, Amount: ${Math.min(amount, remainingAmount)}`);
+        //console.log(`Installment ${i + 1}: Due Date: ${dueDate}, Amount: ${Math.min(amount, remainingAmount)}`);
 
         remainingAmount = Math.max(0, remainingAmount - amount);
 

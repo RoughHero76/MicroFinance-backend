@@ -4,6 +4,7 @@ const RepaymentSchedule = require("../../models/Customers/Loans/Repayment/Repaym
 const Repayment = require("../../models/Customers/Loans/Repayment/Repayments");
 const Penalty = require("../../models/Customers/Loans/Repayment/PenaltyModel");
 const { getSignedUrl, extractFilePath } = require('../../config/firebaseStorage');
+const { generateRepaymentSchedule } = require('../../helpers/loan')
 
 exports.search = async (req, res) => {
     const { query, page = 1, limit = 10 } = req.body;
@@ -97,6 +98,67 @@ exports.search = async (req, res) => {
         res.status(500).json({
             status: "error",
             message: "An error occurred while performing the search.",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+exports.loanDetailsCalculator = async (req, res) => {
+    try {
+        const {
+            loanAmount,
+            loanStartDate,
+            loanDuration,
+            installmentFrequency,
+            gracePeriod = 0
+        } = req.body;
+
+        // Input validation
+        if (!loanAmount || !loanStartDate || !loanDuration || !installmentFrequency) {
+            return res.status(400).json({
+                status: "error",
+                message: "Missing required loan parameters"
+            });
+        }
+
+        // Convert loanStartDate string to Date object
+        const startDate = new Date(loanStartDate);
+
+        // Prepare loan object for generateRepaymentSchedule
+        const loan = {
+            loanAmount: parseFloat(loanAmount),
+            loanStartDate: startDate,
+            loanDuration,
+            installmentFrequency,
+            gracePeriod: parseInt(gracePeriod)
+        };
+
+        // Generate repayment schedule
+        const repaymentDetails = generateRepaymentSchedule(loan);
+
+        // Prepare response without interest calculations
+        const response = {
+            loanAmount: loan.loanAmount,
+            loanStartDate: loan.loanStartDate,
+            loanEndDate: repaymentDetails.loanEndDate,
+            loanDuration,
+            installmentFrequency,
+            gracePeriod: loan.gracePeriod,
+            numberOfInstallments: repaymentDetails.numberOfInstallments,
+            repaymentAmountPerInstallment: repaymentDetails.repaymentAmountPerInstallment,
+            totalRepaymentAmount: repaymentDetails.totalRepaymentAmount,
+            repaymentSchedule: repaymentDetails.schedule
+        };
+
+        res.status(200).json({
+            status: "success",
+            data: response
+        });
+    } catch (error) {
+        console.error('Loan details calculation error:', error);
+        res.status(500).json({
+            status: "error",
+            message: "An error occurred while calculating loan details.",
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }

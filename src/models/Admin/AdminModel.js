@@ -42,7 +42,7 @@ const adminSchema = new mongoose.Schema({
     profilePic: {
         type: String
     },
-    role:{
+    role: {
         type: String,
         default: "admin"
     },
@@ -50,24 +50,22 @@ const adminSchema = new mongoose.Schema({
         type: String,
         default: "inactive"
     },
-    isDeleted:{
+    isDeleted: {
         type: Boolean,
         default: false
     },
-    lastLogin: { 
-        type: Date, 
-        default: Date.now 
+
+    loginHistory: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "LoginHistory"
     },
-    loginHistory: { 
-        type: Array, 
-        default: [] 
-    },
+
 
 }, { timestamps: true });
 
 // Pre-save middleware to hash password and generate UID
-adminSchema.pre('save', async function(next) {
-    
+adminSchema.pre('save', async function (next) {
+
     // Only hash the password if it has been modified (or is new)
     if (!this.isModified('password')) return next();
 
@@ -86,7 +84,7 @@ adminSchema.pre('save', async function(next) {
 });
 
 // Method to compare passwords
-adminSchema.methods.comparePassword = async function(candidatePassword) {
+adminSchema.methods.comparePassword = async function (candidatePassword) {
     return bcrypt.compare(candidatePassword, this.password);
 };
 

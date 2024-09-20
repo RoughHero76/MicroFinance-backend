@@ -1,7 +1,7 @@
-//src/controllers/employee/authController.js
-
 const Employee = require("../../models/Employee/EmployeeModel");
 const { generateToken } = require("../../helpers/token");
+const LoginHistory = require("../../models/Shared/LoginHistoryModel");
+const LastSeen = require("../../models/Shared/LastSeenHistroyModel");
 
 exports.loginEmployee = async (req, res) => {
     try {
@@ -22,9 +22,25 @@ exports.loginEmployee = async (req, res) => {
         // Generate token
         const token = await generateToken(employee);
 
-        // Update Login History
-        employee.lastLogin = new Date();
-        employee.loginHistory.push({ date: new Date() });
+        // Create new login history entry
+        const loginHistory = new LoginHistory({
+            employeeid: employee._id,
+            date: new Date(),
+            // You might want to add IP address, user agent, etc. here
+        });
+        await loginHistory.save();
+
+        // Create new last seen entry
+        const lastSeen = new LastSeen({
+            employeeid: employee._id,
+            date: new Date(),
+            accuracy: 100, 
+            address: req.ip || 'Unknown' 
+        });
+        await lastSeen.save();
+
+        employee.loginHistory = loginHistory._id;
+        employee.lastSeen = lastSeen._id;
         await employee.save();
 
         res.json({
@@ -43,6 +59,5 @@ exports.loginEmployee = async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ status: 'error', message: 'Error logging in employee' });
-
     }
-}
+};

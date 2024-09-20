@@ -1,6 +1,8 @@
 const { generateToken } = require("../../helpers/token");
 const { goodPassword, getPasswordErrors } = require("../../helpers/password");
 const Admin = require("../../models/Admin/AdminModel");
+const LoginHistory = require("../../models/Shared/LoginHistoryModel");
+const LastSeen = require("../../models/Shared/LastSeenHistroyModel");
 
 exports.registerAdmin = async (req, res) => {
     try {
@@ -92,9 +94,22 @@ exports.loginAdmin = async (req, res) => {
         // Generate token
         const token = await generateToken(admin);
 
-        // Update last login
-        admin.lastLogin = new Date();
-        admin.loginHistory.push({ date: new Date() });
+        // Create new login history entry
+        const loginHistory = new LoginHistory({
+            adminid: admin._id,
+            date: new Date(),
+        });
+        await loginHistory.save();
+
+        const lastSeen = new LastSeen({
+            adminid: admin._id,
+            date: new Date(),
+            accuracy: 100, 
+            address: req.ip || 'Unknown' 
+        });
+        await lastSeen.save();
+        // Update admin's loginHistory reference
+        admin.loginHistory = loginHistory._id;
         await admin.save();
 
         res.json({
@@ -115,7 +130,6 @@ exports.loginAdmin = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error during login' });
     }
 };
-
 exports.getAdminProfile = async (req, res) => {
     try {
         const admin = await Admin.findOne({ uid: req.uid }).select('-password');
@@ -138,22 +152,6 @@ exports.getAdminProfile = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error fetching profile' });
     }
 };
-
-exports.loginHistory = async (req, res) => {
-    try {
-        const admin = await Admin.findOne({ uid: req.uid }).select('-password');
-        if (!admin) {
-            return res.status(404).json({ status: 'error', message: 'Admin not found' });
-        }
-
-        loginHistory = admin.loginHistory;
-
-        res.json({ status: 'success', message: 'Login history fetched successfully', data: loginHistory });
-    } catch (error) {
-        console.error('Login history fetch error:', error);
-        res.status(500).json({ status: 'error', message: 'Error fetching login history' });
-    }
-}
 
 exports.updateAdminProfile = async (req, res) => {
     try {

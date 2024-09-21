@@ -6,6 +6,7 @@ const adminRoutes = require('./routes/admin/authRoutes');
 const customerCRUD = require('./routes/admin/customer/customerCRUD');
 const loanRoutes = require('./routes/admin/loan/loanRoutes');
 const employeeRoutesCRUD = require('./routes/admin/employee/employeeRoutes');
+const dashboardRoutes = require('./routes/admin/dashboardRoutes');
 
 // Employee routes
 const employeeAuthRoutes = require('./routes/employee/authRoutes');
@@ -15,6 +16,7 @@ const employeeLoanRoutes = require('./routes/employee/loans/loanRoutes');
 const sharedRoutes = require('./routes/shared/sharedRoutes');
 
 // Admin Routes
+router.use('/admin/dashboard', dashboardRoutes);
 router.use('/admin', adminRoutes);
 router.use('/admin/customer', customerCRUD);
 router.use('/admin/loan', loanRoutes);

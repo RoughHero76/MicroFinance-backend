@@ -8,7 +8,6 @@ const {
   getCountofLoans,
   getTotalMarketDetails,
   deleteLoan,
-  getRepaymentSchedule,
   approveLoan,
   rejectLoan,
   getRepaymentHistory,
@@ -18,10 +17,13 @@ const {
   applyPenaltyToALoanInstallment,
   removePenaltyFromALoanInstallment,
   closeLoan
-} = require('../../../controllers/admin/loanController');
+} = require('../../../controllers/admin/loans/loanController');
+const {
+  getRepaymentSchedule,
+} = require('../../../controllers/admin/loans/RepaymentScheduleController');
 const { verifyToken } = require("../../../helpers/token");
 
-// Private Routes
+/******* Private Routes ********/
 
 router.get('/', verifyToken, getLoans);
 router.post('/', verifyToken, createLoan);
@@ -32,10 +34,14 @@ router.get('/reject', verifyToken, rejectLoan);
 router.post('/assign', verifyToken, assignLoanToEmployee);
 router.get('/count/total', verifyToken, getCountofLoans);
 router.get('/count/market/details', verifyToken, getTotalMarketDetails);
+
+//Repayments Routes
 router.get('/repayment/schedule', verifyToken, getRepaymentSchedule);
 router.get('/repayment/history', verifyToken, getRepaymentHistory);
 router.get('/repayment/history/approve', verifyToken, getRepaymentHistoryToApprove);
 router.post('/repayment/history/approve', verifyToken, approveRepaymentHistory);
+
+//Penalty Routes
 router.post('/apply/planalty', verifyToken, applyPenaltyToALoanInstallment);
 router.post('/remove/planalty', verifyToken, removePenaltyFromALoanInstallment);
 

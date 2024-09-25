@@ -43,29 +43,10 @@ const loanSchema = new mongoose.Schema({
         required: true,
         min: [0, 'Interest rate must be a positive number']
     },
-    documents: {
-        stampPaper: String,
-        promissoryNote: String,
-        stampPaperPhotoLink: String,
-        promissoryNotePhotoLink: String,
-        blankPaper: String,
-        cheques: [{
-            photoLink: String,
-            number: String,
-            bankName: String,
-            accountNumber: String,
-            ifsc: String
-        }],
-        governmentIds: [{
-            type: {
-                type: String,
-                enum: ['Aadhar', 'PAN', 'Driving License', 'Voter ID', 'Passport']
-            },
-            number: String,
-            frontPhotoLink: String,
-            backPhotoLink: String
-        }]
-    },
+    documents: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Document'
+    }],
     status: {
         type: String,
         enum: ['Pending', 'Approved', 'Rejected', 'Active', 'Closed'],
@@ -80,10 +61,7 @@ const loanSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-    loanClosedDate: {
-        type: Date
-    
-    },
+    loanClosedDate: Date,
     repaymentAmountPerInstallment: {
         type: Number,
         required: true,
@@ -97,13 +75,11 @@ const loanSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    totalPenalty: {
-        type: [{
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Penalty'
-        }]
-    },
-    totalPenaltyAmmount: {
+    totalPenalty: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Penalty'
+    }],
+    totalPenaltyAmount: {
         type: Number,
         default: 0
     },
@@ -112,6 +88,14 @@ const loanSchema = new mongoose.Schema({
         enum: ['Personal', 'Business', 'Other'],
         default: 'Personal'
     },
+    loanNumber: {
+        type: String,
+        unique: true
+    },
+    businessFirmName: String,
+    businessAddress: String,
+    businessPhone: String,
+    businessEmail: String,
     assignedTo: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee'

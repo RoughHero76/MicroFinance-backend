@@ -21,9 +21,7 @@ const repaymentSchema = new mongoose.Schema({
         enum: ['Cash', 'Bank Transfer', 'GooglePay', 'PhonePay', 'Paytm', 'Cheque', 'Other'],
         required: true
     },
-    transactionId: {
-        type: String
-    },
+    transactionId: String,
     status: {
         type: String,
         enum: ['Pending', 'Approved', 'Failed'],
@@ -32,14 +30,13 @@ const repaymentSchema = new mongoose.Schema({
     loan: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Loan',
+        required: true
     },
-    balanceAfterPayment: {
-        type: Number
-    },
+    balanceAfterPayment: Number,
     collectedBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
-    },
+        ref: 'Employee'
+    }
 }, { timestamps: true });
 
 const Repayment = mongoose.model('Repayment', repaymentSchema);

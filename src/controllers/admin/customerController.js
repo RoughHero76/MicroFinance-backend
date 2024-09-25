@@ -14,7 +14,7 @@ exports.registerCustomer = async (req, res) => {
         const {
             fname, //Required
             lname, //Required
-            gender,
+            gender, //Required
             email,
             userName,
             phoneNumber, //Required
@@ -26,7 +26,7 @@ exports.registerCustomer = async (req, res) => {
 
         } = req.body;
 
-        if (!fname || !lname || !phoneNumber) {
+        if (!fname || !lname || !phoneNumber || !gender) {
             return res.status(400).json({ status: 'error', message: 'All fields are required' });
         }
         // Check if customer already exists

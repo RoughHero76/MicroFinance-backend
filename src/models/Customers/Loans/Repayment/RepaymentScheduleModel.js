@@ -11,9 +11,7 @@ const repaymentScheduleSchema = new mongoose.Schema({
         type: Date,
         required: true
     },
-    paymentDate: {
-        type: Date,
-    },
+    paymentDate: Date,
     amount: {
         type: Number,
         required: true,
@@ -32,36 +30,23 @@ const repaymentScheduleSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Penalty'
     },
-
-    originalAmount: {
-        type: Number
-    },
-    repayments: {
-        type: [{
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'Repayment'
-        }]
-    },
-
+    originalAmount: Number,
+    repayments: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Repayment'
+    }],
     collectedBy: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Employee',
+        ref: 'Employee'
     },
-
-    loanInstallmentNumber: {
-        type: Number,
-    },
-
+    loanInstallmentNumber: Number
 }, { timestamps: true });
-// Add a virtual field
-repaymentScheduleSchema.virtual('isOverdue').get(function () {
+
+repaymentScheduleSchema.virtual('isOverdue').get(function() {
     return this.status === 'Overdue';
 });
 
-
-// Add an index
 repaymentScheduleSchema.index({ loan: 1, dueDate: 1 });
-
 
 const RepaymentSchedule = mongoose.model('RepaymentSchedule', repaymentScheduleSchema);
 module.exports = RepaymentSchedule;

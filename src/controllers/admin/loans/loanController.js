@@ -1,26 +1,19 @@
 const mongoose = require('mongoose');
 const { getStorage } = require('firebase-admin/storage');
-const Loan = require('../../models/Customers/Loans/LoanModel');
-const Repayment = require('../../models/Customers/Loans/Repayment/Repayments');
-const RepaymentSchedule = require('../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
-const Employee = require('../../models/Employee/EmployeeModel');
-const Penalty = require('../../models/Customers/Loans/Repayment/PenaltyModel');
-const Customer = require('../../models/Customers/profile/CustomerModel');
-const { generateRepaymentSchedule } = require('../../helpers/loan');
-const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
+const Loan = require('../../../models/Customers/Loans/LoanModel');
+const Repayment = require('../../../models/Customers/Loans/Repayment/Repayments');
+const RepaymentSchedule = require('../../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
+const Document = require('../../../models/Customers/Loans/DocumentsModel');
+const Employee = require('../../../models/Employee/EmployeeModel');
+const Penalty = require('../../../models/Customers/Loans/Repayment/PenaltyModel');
+const Customer = require('../../../models/Customers/profile/CustomerModel');
+const { generateRepaymentSchedule } = require('../../../helpers/loan');
+const { getSignedUrl, extractFilePath, uploadFile, deleteDocuments } = require('../../../config/firebaseStorage');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
-
 exports.createLoan = [
-    upload.fields([
-        { name: 'stampPaperPhoto', maxCount: 1 },
-        { name: 'promissoryNotePhoto', maxCount: 1 },
-        { name: 'blankPaper', maxCount: 1 },
-        { name: 'cheques', maxCount: 10 },
-        { name: 'governmentIdsFront', maxCount: 5 },
-        { name: 'governmentIdsBack', maxCount: 5 },
-    ]),
+    upload.any(),
     async (req, res) => {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -36,14 +29,16 @@ exports.createLoan = [
                 installmentFrequency,
                 interestRate,
                 loanStartDate,
-                chequesDetails,
-                governmentIdsDetails,
                 gracePeriod,
-                documents
+                documents,
+                loanNumber,
+                businessFirmName,
+                businessAddress,
+                businessPhone,
+                businessEmail
             } = req.body;
 
             const parsedDocuments = JSON.parse(documents);
-            const { stampPaper, promissoryNote } = parsedDocuments;
 
             console.log('Parsed request body', {
                 customerUid,
@@ -53,11 +48,8 @@ exports.createLoan = [
                 installmentFrequency,
                 interestRate,
                 loanStartDate,
-                chequesDetails,
-                governmentIdsDetails,
                 gracePeriod,
-                stampPaper,
-                promissoryNote
+                parsedDocuments
             });
 
             // Validation checks (keep existing validation logic)
@@ -75,6 +67,7 @@ exports.createLoan = [
             const parsedBody = {
                 ...req.body,
                 loanAmount: parseFloat(loanAmount),
+                loanNumber: parseInt(loanNumber),
                 principalAmount: parseFloat(principalAmount),
                 interestRate: parseFloat(interestRate),
                 gracePeriod: parseInt(gracePeriod) || 0
@@ -89,7 +82,7 @@ exports.createLoan = [
                 gracePeriod: parsedBody.gracePeriod
             });
 
-            // Create a new loan document with all required fields
+            // Create a new loan document
             const newLoan = new Loan({
                 customer: customer._id,
                 loanAmount: parsedBody.loanAmount,
@@ -101,33 +94,39 @@ exports.createLoan = [
                 numberOfInstallments: repaymentScheduleData.numberOfInstallments,
                 loanEndDate: repaymentScheduleData.loanEndDate,
                 repaymentAmountPerInstallment: repaymentScheduleData.schedule[0]?.amount || 0,
-                outstandingAmount: parsedBody.loanAmount
+                outstandingAmount: parsedBody.loanAmount,
+                loanNumber: parsedBody.loanNumber,
+                businessFirmName: businessFirmName,
+                businessAddress: businessAddress,
+                businessPhone: businessPhone,
+                businessEmail: businessEmail
+
+
             });
 
+            await newLoan.save({ session });
+
             // Function to upload file with the new path structure
-            const uploadFileWithPath = async (file, documentType) => {
-                const path = `${customerUid}/${newLoan._id}/${documentType}`;
+            const uploadFileWithPath = async (file, documentName) => {
+                const path = `${customerUid}/${newLoan._id}/${documentName}`;
                 return await uploadFile(file, path);
             };
 
-            const documentLinks = {
-                stampPaper,
-                promissoryNote,
-                stampPaperPhotoLink: await uploadFileWithPath(req.files['stampPaperPhoto'][0], 'stampPaperPhoto'),
-                promissoryNotePhotoLink: await uploadFileWithPath(req.files['promissoryNotePhoto'][0], 'promissoryNotePhoto'),
-                blankPaper: await uploadFileWithPath(req.files['blankPaper'][0], 'blankPaper'),
-                cheques: await Promise.all(req.files['cheques'].map(async (file, index) => ({
-                    photoLink: await uploadFileWithPath(file, `cheques/cheque_${index + 1}`),
-                    ...JSON.parse(chequesDetails)[index]
-                }))),
-                governmentIds: await Promise.all(JSON.parse(governmentIdsDetails).map(async (id, index) => ({
-                    ...id,
-                    frontPhotoLink: await uploadFileWithPath(req.files['governmentIdsFront'][index], `governmentIds/${id.type}_front`),
-                    backPhotoLink: await uploadFileWithPath(req.files['governmentIdsBack'][index], `governmentIds/${id.type}_back`)
-                })))
-            };
-
-            console.log('Document links object created:', documentLinks);
+            // Upload documents
+            for (const doc of parsedDocuments) {
+                const file = req.files.find(f => f.fieldname === doc.fieldname);
+                if (file) {
+                    const documentUrl = await uploadFileWithPath(file, doc.documentName);
+                    const newDocument = new Document({
+                        loan: newLoan._id,
+                        documentName: doc.documentName,
+                        documentUrl: documentUrl,
+                        documentType: doc.documentType
+                    });
+                    await newDocument.save({ session });
+                    newLoan.documents.push(newDocument._id);
+                }
+            }
 
             // Create RepaymentSchedule documents
             const repaymentSchedules = await Promise.all(repaymentScheduleData.schedule.map(async (scheduleItem, index) => {
@@ -142,10 +141,7 @@ exports.createLoan = [
                 return repaymentSchedule._id;
             }));
 
-            // Update the loan document
-            newLoan.documents = documentLinks;
             newLoan.repaymentSchedules = repaymentSchedules;
-
             await newLoan.save({ session });
             customer.loans.push(newLoan._id);
             await customer.save({ session });
@@ -162,77 +158,12 @@ exports.createLoan = [
         }
     }
 ];
-exports.createLoanWithOnlyDocumentsURL = async (req, res) => {
-    try {
-        const {
-            customerUid,
-            loanAmount,
-            principalAmount,
-            loanDuration,
-            installmentFrequency,
-            interestRate,
-            documents,
-            loanStartDate
-        } = req.body;
 
-        // Validate required fields
-        if (!customerUid || !loanAmount || !principalAmount || !loanDuration || !installmentFrequency || !interestRate || !documents || !loanStartDate) {
-            return res.status(400).json({ status: 'error', message: 'All fields are required' });
-        }
-
-        // Validate loan duration
-        if (!['100 days', '200 days', '300 days'].includes(loanDuration)) {
-            return res.status(400).json({ status: 'error', message: 'Invalid loan duration' });
-        }
-
-        // Find the customer
-        const customer = await Customer.findOne({ uid: customerUid });
-        if (!customer) {
-            return res.status(404).json({ status: 'error', message: 'Customer not found' });
-        }
-
-        // Generate the repayment schedule
-        const repaymentScheduleData = generateRepaymentSchedule({
-            loanAmount,
-            loanStartDate: new Date(loanStartDate),
-            loanDuration,
-            installmentFrequency,
-            gracePeriod: 0 // Add any grace period logic here if necessary
-        });
-
-        // Create a new loan object
-        const newLoan = new Loan({
-            customer: customer._id,
-            loanAmount,
-            principalAmount,
-            loanDuration,
-            installmentFrequency,
-            interestRate,
-            documents,
-            loanStartDate: new Date(loanStartDate),
-            loanEndDate: repaymentScheduleData.loanEndDate,
-            repaymentSchedule: repaymentScheduleData.schedule,
-            repaymentAmountPerInstallment: repaymentScheduleData.schedule[0]?.amount || 0, // Repayment amount per installment
-            numberOfInstallments: repaymentScheduleData.numberOfInstallments || repaymentScheduleData.schedule.length, // Number of installments
-            outstandingAmount: repaymentScheduleData.outstandingAmount
-        });
-
-        // Save the loan to the customer's loan list
-        customer.loans.push(newLoan._id);
-
-        // Save both the loan and the customer
-        await newLoan.save();
-        await customer.save();
-
-        // Respond with the created loan
-        res.status(201).json({ status: 'success', loan: newLoan });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
-    }
-};
 
 exports.deleteLoan = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
         const { loanId, force } = req.query;
 
@@ -240,12 +171,11 @@ exports.deleteLoan = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'loanId is required' });
         }
 
-        const loan = await Loan.findById(loanId);
+        const loan = await Loan.findById(loanId).populate('documents');
 
         if (!loan) {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
         }
-
 
         const customer = await Customer.findById(loan.customer);
 
@@ -253,36 +183,42 @@ exports.deleteLoan = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Customer not found' });
         }
 
-        customer.loans = customer.loans.filter(l => l.toString() !== loanId);
-
-        if (force == false) {
-            if (loan.status === 'Active') {
-                return res.status(400).json({ status: 'error', message: 'Loan is active. Cannot delete it.' });
-            }
+        if (force !== 'true' && loan.status === 'Active') {
+            return res.status(400).json({ status: 'error', message: 'Loan is active. Cannot delete it.' });
         }
 
-        await Customer.findByIdAndUpdate(customer._id, { $set: { loans: customer.loans } });
+        // Delete documents from Firebase Storage and the database
+        await deleteDocuments(loanId);
+
+        // Remove loan reference from customer
+        customer.loans = customer.loans.filter(l => l.toString() !== loanId);
+        await customer.save({ session });
 
         // Delete Repayment Schedule
-        await RepaymentSchedule.deleteMany({ loan: loanId });
+        await RepaymentSchedule.deleteMany({ loan: loanId }, { session });
 
         // Delete Repayments 
-        await Repayment.deleteMany({ loan: loanId });
+        await Repayment.deleteMany({ loan: loanId }, { session });
 
         // Delete Penalties
-        await Penalty.deleteMany({ loan: loanId });
+        await Penalty.deleteMany({ loan: loanId }, { session });
 
-        await Loan.findByIdAndDelete(loanId);
+        // Delete the loan
+        await Loan.findByIdAndDelete(loanId, { session });
 
-        //Delete Collected Collection History in Employee Collection
+        // Delete Collected Collection History in Employee Collection
+        // (You may need to implement this part based on your specific requirements)
 
-        res.json({ status: 'success', message: 'Loan deleted successfully' });
+        await session.commitTransaction();
+        res.json({ status: 'success', message: 'Loan and associated documents deleted successfully' });
     } catch (error) {
+        await session.abortTransaction();
         console.error(error);
-        res.status(500).json({ status: 'error', message: 'Internal server error' });
+        res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
+    } finally {
+        session.endSession();
     }
 };
-
 exports.getLoans = async (req, res) => {
     try {
         const {
@@ -302,17 +238,13 @@ exports.getLoans = async (req, res) => {
         console.log('getLoans - req.query: ', req.query);
 
         let query = {};
-
         let select = '';
+        let populateOptions = [];
 
         // Filter by limited loan details
         if (limitedLoanDetails === 'true') {
             select = 'uid loanAmount status loanStartDate loanEndDate';
-        } else {
-            select = '';
         }
-
-        let populateOptions = [];
 
         // Filter by customer UID
         if (customerUid) {
@@ -342,6 +274,12 @@ exports.getLoans = async (req, res) => {
             });
         }
 
+        // Include documents
+        populateOptions.push({
+            path: 'documents',
+            select: 'uid documentName documentUrl documentType status'
+        });
+
         // Pagination
         const skip = (page - 1) * limit;
 
@@ -356,64 +294,21 @@ exports.getLoans = async (req, res) => {
             .skip(skip)
             .limit(Number(limit));
 
-        // Always include signed documents by default
+        // Generate signed URLs for documents
         loans = await Promise.all(loans.map(async (loan) => {
             loan = loan.toObject();
-            if (loan.documents) {
-                // Generate signed URLs for document fields
-                const singleDocFields = ['stampPaperPhotoLink', 'promissoryNotePhotoLink', 'blankPaper'];
-                for (const field of singleDocFields) {
-                    if (loan.documents[field]) {
-                        const filePath = extractFilePath(loan.documents[field]);
+            if (loan.documents && loan.documents.length > 0) {
+                loan.documents = await Promise.all(loan.documents.map(async (doc) => {
+                    if (doc.documentUrl) {
                         try {
-                            loan.documents[field] = await getSignedUrl(filePath);
+                            doc.documentUrl = await getSignedUrl(doc.documentUrl);
                         } catch (error) {
-                            console.error(`Error generating signed URL for ${field}:`, error);
-                            loan.documents[field] = null;
+                            console.error(`Error generating signed URL for document ${doc.uid}:`, error);
+                            doc.documentUrl = null;
                         }
                     }
-                }
-
-                // Generate signed URLs for cheques
-                if (loan.documents.cheques) {
-                    loan.documents.cheques = await Promise.all(loan.documents.cheques.map(async (cheque) => {
-                        if (cheque.photoLink) {
-                            const filePath = extractFilePath(cheque.photoLink);
-                            try {
-                                cheque.photoLink = await getSignedUrl(filePath);
-                            } catch (error) {
-                                console.error('Error generating signed URL for cheque:', error);
-                                cheque.photoLink = null;
-                            }
-                        }
-                        return cheque;
-                    }));
-                }
-
-                // Generate signed URLs for government IDs
-                if (loan.documents.governmentIds) {
-                    loan.documents.governmentIds = await Promise.all(loan.documents.governmentIds.map(async (id) => {
-                        if (id.frontPhotoLink) {
-                            const frontFilePath = extractFilePath(id.frontPhotoLink);
-                            try {
-                                id.frontPhotoLink = await getSignedUrl(frontFilePath);
-                            } catch (error) {
-                                console.error('Error generating signed URL for government ID front:', error);
-                                id.frontPhotoLink = null;
-                            }
-                        }
-                        if (id.backPhotoLink) {
-                            const backFilePath = extractFilePath(id.backPhotoLink);
-                            try {
-                                id.backPhotoLink = await getSignedUrl(backFilePath);
-                            } catch (error) {
-                                console.error('Error generating signed URL for government ID back:', error);
-                                id.backPhotoLink = null;
-                            }
-                        }
-                        return id;
-                    }));
-                }
+                    return doc;
+                }));
             }
             return loan;
         }));
@@ -424,7 +319,6 @@ exports.getLoans = async (req, res) => {
         // Include repayment schedule
         if (includeRepaymentSchedule === 'true') {
             loans = await Promise.all(loans.map(async (loan) => {
-                loan = loan.toObject();
                 loan.repaymentSchedule = await RepaymentSchedule.find({ loan: loan._id })
                     .select('dueDate amount status penaltyApplied penalty')
                     .sort({ dueDate: 1 });
@@ -435,7 +329,6 @@ exports.getLoans = async (req, res) => {
         // Include repayment history
         if (includeRepaymentHistory === 'true') {
             loans = await Promise.all(loans.map(async (loan) => {
-                loan = loan.toObject();
                 const repaymentSchedules = await RepaymentSchedule.find({ loan: loan._id });
                 loan.repaymentHistory = await Repayment.find({
                     repaymentSchedule: { $in: repaymentSchedules.map(rs => rs._id) }
@@ -462,6 +355,19 @@ exports.getLoans = async (req, res) => {
     }
 };
 
+// New function to delete documents
+exports.deleteDocuments = async (req, res) => {
+    try {
+        const { loanId } = req.params;
+        const { documentIds } = req.body;
+
+        const result = await deleteDocuments(loanId, documentIds);
+        res.json({ status: 'success', ...result });
+    } catch (error) {
+        console.error('Error in deleteDocuments controller:', error);
+        res.status(500).json({ status: 'error', message: error.message || 'Internal server error' });
+    }
+};
 
 
 exports.approveLoan = async (req, res) => {
@@ -546,85 +452,7 @@ exports.rejectLoan = async (req, res) => {
     }
 }
 
-exports.getRepaymentSchedule = async (req, res) => {
-    try {
-        const { loanId, searchTerm, statusFilter, dateFrom, dateTo } = req.query;
-        const { page = 1, limit = 10 } = req.query;
 
-        if (!loanId) {
-            return res.status(400).json({ status: 'error', message: 'Loan ID is required' });
-        }
-
-        const loan = await Loan.findById(loanId);
-        if (!loan) {
-            return res.status(404).json({ status: 'error', message: 'Loan not found' });
-        }
-
-        let query = { loan: loanId };
-
-        if (statusFilter) query.status = statusFilter;
-
-        if (dateFrom || dateTo) {
-            query.dueDate = {};
-            if (dateFrom) query.dueDate.$gte = new Date(dateFrom);
-            if (dateTo) query.dueDate.$lte = new Date(dateTo);
-        }
-
-        if (searchTerm) {
-            const searchRegex = new RegExp(searchTerm, 'i');
-            query.$or = [
-                { amount: { $regex: searchRegex } },
-                { status: { $regex: searchRegex } },
-                { dueDate: { $regex: searchRegex } }
-            ];
-        }
-
-        const skip = (page - 1) * limit;
-        const limitNum = parseInt(limit);
-
-        const [total, repaymentSchedule] = await Promise.all([
-            RepaymentSchedule.countDocuments(query),
-            RepaymentSchedule.find(query)
-                .skip(skip)
-                .limit(limitNum)
-                .sort({ dueDate: 1 })
-                .lean()
-        ]);
-
-        if (repaymentSchedule.length > 0) {
-            const repaymentIds = repaymentSchedule.map(r => r._id);
-            const penalties = await Penalty.find({
-                loan: loanId,
-                repaymentSchedule: { $in: repaymentIds }
-            }).lean();
-
-            const penaltyMap = penalties.reduce((acc, penalty) => {
-                acc[penalty.repaymentSchedule.toString()] = penalty;
-                return acc;
-            }, {});
-
-            repaymentSchedule.forEach(repayment => {
-                repayment.penalty = penaltyMap[repayment._id.toString()] || null;
-            });
-        }
-
-        let loanStatus = loan.status;
-
-        res.json({
-            status: 'success',
-            data: {
-                repaymentSchedule,
-                loanStatus,
-                currentPage: parseInt(page),
-                totalPages: Math.ceil(total / limitNum),
-                totalEntries: total
-            }
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ status: 'error', message: 'Internal server error' });
-    }
-};
 
 exports.getRepaymentHistory = async (req, res) => {
 
@@ -652,7 +480,7 @@ exports.getRepaymentHistory = async (req, res) => {
         }
 
         if (repayments.length === 0) {
-            return res.status(200).json({ status: 'success', message: 'No repayments found' });
+            return res.status(400).json({ status: 'success', message: 'No repayments found' });
         }
 
         res.status(200).json({ status: 'success', data: repayments });
@@ -661,24 +489,6 @@ exports.getRepaymentHistory = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 }
-
-
-/* exports.approveRepaymentHistory = async (req, res) => {
-    try {
-        const { repaymentScheduleId } = req.query;
-
-        if (!repaymentScheduleId) {
-            return res.status(400).json({ status: 'error', message: 'repaymentScheduleId is required' });
-        }
-
-        const repaymentSchedule = await RepaymentSchedule.findById(repaymentScheduleId);
-        if (!repaymentSchedule) {
-            return res.status(404).json({ status: 'error', message: 'Repayment schedule not found' });
-        }
-
-        if 
- */
-
 
 exports.getCountofLoans = async (req, res) => {
     try {
@@ -826,19 +636,27 @@ exports.approveRepaymentHistory = async (req, res) => {
     try {
         const { repaymentId } = req.body;
 
+        console.log('Approve repayment history request body:', req.body);
+
         if (!repaymentId) {
+            console.log('Repayment ID is not provided');
             return res.status(400).json({ status: 'error', message: 'Repayment ID is required' });
         }
 
         const repayment = await Repayment.findById(repaymentId);
 
+        console.log('Found repayment:', repayment);
+
         if (!repayment) {
+            console.log('Repayment not found');
             return res.status(404).json({ status: 'error', message: 'Repayment not found' });
         }
 
         repayment.status = 'Approved';
 
         await repayment.save();
+
+        console.log('Repayment updated successfully:', repayment);
 
         res.status(200).json({ status: 'success', message: 'Repayment approved successfully' });
 
@@ -847,6 +665,7 @@ exports.approveRepaymentHistory = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 }
+
 
 
 exports.assignLoanToEmployee = async (req, res) => {
@@ -859,6 +678,10 @@ exports.assignLoanToEmployee = async (req, res) => {
         const loan = await Loan.findById(loanId);
         if (!loan) {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        if (loan.status !== 'Active') {
+            return res.status(400).json({ status: 'error', message: 'Loan is not active' });
         }
 
         const employee = await Employee.findById(employeeId);
@@ -927,12 +750,7 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
         console.log('Saving repayment schedule: ', repaymentSchedule);
         await repaymentSchedule.save();
 
-        loan.totalPenaltyAmmount += penaltyAmount;
-        loan.totalPenalty.push(penalty._id);
-        loan.outstandingAmount += penaltyAmount;
-        console.log('Saving loan: ', loan);
-        await loan.save();
-
+        //No need to modify the loan since we are modifying it in penalty model pre save
         res.status(200).json({ status: 'success', message: 'Penalty applied successfully', data: penalty });
     } catch (error) {
         console.error('Penalty application error:', error);
@@ -979,7 +797,7 @@ exports.removePenaltyFromALoanInstallment = async (req, res) => {
 
         // Remove the penalty document if it exists
         if (penaltyId) {
-            const penalty = await Penalty.findByIdAndDelete(penaltyId);
+            const penalty = await Penalty.deleteOne(penaltyId);
             console.log('Penalty removed:', JSON.stringify(penalty, null, 2));
         }
 
@@ -1013,50 +831,52 @@ exports.removePenaltyFromALoanInstallment = async (req, res) => {
         console.log('Repayment schedule after saving:', JSON.stringify(repaymentSchedule, null, 2));
 
         // Update the loan document
-        const previousTotalPenaltyAmount = loan.totalPenaltyAmmount;
+        const previousTotalPenaltyAmount = loan.totalPenaltyAmount;
         const previousOutstandingAmount = loan.outstandingAmount;
 
 
-        loan.totalPenaltyAmmount = Math.max(0, loan.totalPenaltyAmmount - penaltyAmount);
+        loan.totalPenaltyAmount = Math.max(0, loan.totalPenaltyAmount - penaltyAmount);
         loan.totalPenalty = loan.totalPenalty.filter(p => p && p.toString() !== penaltyId.toString());
         loan.outstandingAmount = Math.max(0, loan.outstandingAmount - penaltyAmount);
 
         console.log('Loan before saving:', {
             previousTotalPenaltyAmount,
-            newTotalPenaltyAmount: loan.totalPenaltyAmmount,
+            newTotalPenaltyAmount: loan.totalPenaltyAmount,
             previousOutstandingAmount,
             newOutstandingAmount: loan.outstandingAmount,
             totalPenalty: loan.totalPenalty
         });
+        /* 
+                const updatedLoan = await Loan.findByIdAndUpdate(
+                    loanId,
+                    {
+                        $set: {
+                            totalPenaltyAmount: loan.totalPenaltyAmount,
+                            outstandingAmount: loan.outstandingAmount,
+                            totalPenalty: loan.totalPenalty
+                        }
+                    },
+                    { new: true, runValidators: true }
+                );
+        
+                console.log('Loan after update:', JSON.stringify(updatedLoan, null, 2));
+        
+                if (!updatedLoan) {
+                    throw new Error('Failed to update loan document');
+                } */
 
-        const updatedLoan = await Loan.findByIdAndUpdate(
-            loanId,
-            {
-                $set: {
-                    totalPenaltyAmmount: loan.totalPenaltyAmmount,
-                    outstandingAmount: loan.outstandingAmount,
-                    totalPenalty: loan.totalPenalty
-                }
-            },
-            { new: true, runValidators: true }
-        );
-
-        console.log('Loan after update:', JSON.stringify(updatedLoan, null, 2));
-
-        if (!updatedLoan) {
-            throw new Error('Failed to update loan document');
-        }
+        //No need to modify the loan as we are already doing in penalty model pre-save
 
         res.status(200).json({
             status: 'success',
             message: 'Penalty removed successfully',
             removedPenaltyId: penaltyId,
             removedPenaltyAmount: penaltyAmount,
-            updatedLoan: {
-                totalPenaltyAmmount: updatedLoan.totalPenaltyAmmount,
-                totalPenalty: updatedLoan.totalPenalty,
-                outstandingAmount: updatedLoan.outstandingAmount
-            },
+            /*             updatedLoan: {
+                            totalPenaltyAmount: updatedLoan.totalPenaltyAmount,
+                            totalPenalty: updatedLoan.totalPenalty,
+                            outstandingAmount: updatedLoan.outstandingAmount
+                        }, */
             updatedRepaymentSchedule: {
                 status: repaymentSchedule.status,
                 penaltyApplied: repaymentSchedule.penaltyApplied,
@@ -1155,47 +975,7 @@ exports.closeLoan = async (req, res) => {
 
         // Handle document deletion if required
         if (deleteLoanDocuments) {
-            const bucket = getStorage().bucket();
-            const customer = await Customer.findById(loan.customer);
-            const customerUid = customer.uid;
-
-            // Function to delete file with correct path
-            const deleteFileFromStorage = async (filePath) => {
-                if (!filePath) return;
-                try {
-                    await bucket.file(filePath).delete();
-                    console.log(`Successfully deleted file: ${filePath}`);
-                } catch (error) {
-                    console.error(`Failed to delete file: ${filePath}`, error);
-                }
-            };
-
-            // Example usage in the deletion code
-            await deleteFileFromStorage(`${customerUid}/${loan._id}/stampPaperPhoto`);
-            await deleteFileFromStorage(`${customerUid}/${loan._id}/promissoryNotePhoto`);
-            await deleteFileFromStorage(`${customerUid}/${loan._id}/blankPaper`);
-
-            // For cheques
-            for (let i = 0; i < loan.documents.cheques.length; i++) {
-                await deleteFileFromStorage(`${customerUid}/${loan._id}/cheques/cheque_${i + 1}`);
-            }
-
-            // For government IDs
-            for (const id of loan.documents.governmentIds) {
-                await deleteFileFromStorage(`${customerUid}/${loan._id}/governmentIds/${id.type}_front`);
-                await deleteFileFromStorage(`${customerUid}/${loan._id}/governmentIds/${id.type}_back`);
-            }
-
-            // Clear document fields in the loan
-            loan.documents = {
-                stampPaper: null,
-                promissoryNote: null,
-                stampPaperPhotoLink: null,
-                promissoryNotePhotoLink: null,
-                blankPaper: null,
-                cheques: [],
-                governmentIds: []
-            };
+            await deleteDocuments(loanId);
         }
 
         await loan.save({ session });

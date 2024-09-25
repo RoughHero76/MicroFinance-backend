@@ -425,12 +425,7 @@ exports.applyPenaltyToALoanInstallment = async (req, res) => {
         repaymentSchedule.status = 'Overdue';
         repaymentSchedule.penaltyAmount = penaltyAmount;
         await repaymentSchedule.save();
-
-        loan.totalPenaltyAmmount += penaltyAmount; 
-        loan.totalPenalty.push(penalty._id);
-        loan.outstandingAmount += penaltyAmount;
-        await loan.save();
-
+        //No need to make modifications to loan is there are pre-save available in penalty
         res.status(200).json({ status: 'success', message: 'Penalty applied successfully', data: penalty });
     } catch (error) {
         console.error('Penalty application error:', error);

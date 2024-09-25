@@ -1,6 +1,8 @@
 const admin = require('firebase-admin');
 const { getStorage } = require('firebase-admin/storage');
 const path = require('path');
+const Loan = require('../models/Customers/Loans/LoanModel');
+const Document = require('../models/Customers/Loans/DocumentsModel');
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -44,36 +46,57 @@ async function uploadFile(file, destination) {
 }
 
 // Function to get a signed URL for temporary access
-async function getSignedUrl(filePath, expirationTime = 3600) {
+async function getSignedUrl(url, expirationTime = 3600) {
+  const filePath = extractFilePath(url);
   const file = bucket.file(filePath);
 
   try {
-    const [url] = await file.getSignedUrl({
+    const [signedUrl] = await file.getSignedUrl({
       action: 'read',
-      expires: Date.now() + expirationTime * 1000, // Convert seconds to milliseconds
+      expires: Date.now() + expirationTime * 1000,
     });
-    return url;
+    return signedUrl;
   } catch (error) {
     console.error('Error generating signed URL:', error);
     throw error;
   }
 }
 
-/**
- * Extracts the file path from a URL. The URL is expected to be in the format of
- * a Google Cloud Storage URL, e.g.:
- * https://storage.cloud.google.com/bucket-name/path/to/file.txt
- * Returns the file path as a string, e.g. "path/to/file.txt"
- * @param {string} url - The URL to extract the file path from
- * @returns {string} The file path
- */
 function extractFilePath(url) {
   const parsedUrl = new URL(url);
   const pathParts = parsedUrl.pathname.split('/');
   // Remove the first two segments (which are likely the repeated bucket name)
-  return pathParts.slice(2).join('/');
+  return decodeURIComponent(pathParts.slice(2).join('/'));
 }
 
+// New function to delete documents
+async function deleteDocuments(loanId) {
+  try {
+    const loan = await Loan.findById(loanId).populate('documents');
+    if (!loan) {
+      throw new Error('Loan not found');
+    }
 
+    for (const doc of loan.documents) {
+      const filePath = extractFilePath(doc.documentUrl);
+      try {
+        await bucket.file(filePath).delete();
+      } catch (error) {
+        console.error(`Error deleting file from Firebase Storage: ${error.message}`);
+        // Continue with the deletion process even if a file is not found in Firebase Storage
+      }
+      await Document.findByIdAndDelete(doc._id);
+    }
 
-module.exports = { uploadFile, getSignedUrl, extractFilePath };
+    // Clear the documents array in the loan
+    loan.documents = [];
+    await loan.save();
+
+    return { message: 'Documents deleted successfully' };
+  } catch (error) {
+    console.error('Error deleting documents:', error);
+    throw error;
+  }
+}
+
+module.exports = { uploadFile, getSignedUrl, extractFilePath, deleteDocuments };

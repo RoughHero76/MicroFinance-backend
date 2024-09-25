@@ -19,8 +19,8 @@ const customerSchema = new mongoose.Schema({
     },
     gender: {
         type: String,
-        enum: ['Male', 'Female', 'Other'],
-        allowNull: true
+        enum: ['Male', 'Female', 'Other', 'Not Defined'],
+        default: 'Not Defined'
     },
     email: {
         type: String,

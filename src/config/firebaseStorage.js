@@ -62,13 +62,18 @@ async function getSignedUrl(url, expirationTime = 3600) {
   }
 }
 
-function extractFilePath(url) {
-  const parsedUrl = new URL(url);
-  const pathParts = parsedUrl.pathname.split('/');
-  // Remove the first two segments (which are likely the repeated bucket name)
-  return decodeURIComponent(pathParts.slice(2).join('/'));
+function extractFilePath(input) {
+  try {
+    // Try to parse as a full URL
+    const parsedUrl = new URL(input);
+    const pathParts = parsedUrl.pathname.split('/');
+    // Remove the first two segments (which are likely the repeated bucket name)
+    return decodeURIComponent(pathParts.slice(2).join('/'));
+  } catch (error) {
+    // If parsing as URL fails, assume it's already a relative path
+    return decodeURIComponent(input);
+  }
 }
-
 // New function to delete documents
 async function deleteDocuments(loanId) {
   try {

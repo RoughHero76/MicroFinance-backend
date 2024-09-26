@@ -3,8 +3,12 @@ const Loan = require("../../models/Customers/Loans/LoanModel");
 const RepaymentSchedule = require("../../models/Customers/Loans/Repayment/RepaymentScheduleModel");
 const Repayment = require("../../models/Customers/Loans/Repayment/Repayments");
 const Penalty = require("../../models/Customers/Loans/Repayment/PenaltyModel");
-const { getSignedUrl, extractFilePath } = require('../../config/firebaseStorage');
+const Admin = require("../../models/Admin/AdminModel");
+const Employee = require("../../models/Employee/EmployeeModel");
+const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
 const { generateRepaymentSchedule } = require('../../helpers/loan')
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
 
 exports.search = async (req, res) => {
     const { query, page = 1, limit = 10 } = req.body;
@@ -163,3 +167,118 @@ exports.loanDetailsCalculator = async (req, res) => {
         });
     }
 };
+
+exports.addProfilePictureAdminAndEmployee = [
+    upload.single('profilePic'),
+    async (req, res) => {
+        try {
+            const role = req.role;
+            const file = req.file;
+            const userUid = req.uid;
+
+            console.log(`Role :${role}, UID: ${userUid}`);
+
+
+            if (!file) {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Please upload a file"
+                });
+            }
+
+            if (role === "admin") {
+                const admin = await Admin.findOne({ uid: userUid });
+                if (!admin) {
+                    return res.status(404).json({
+                        status: "error",
+                        message: "Admin not found"
+                    });
+                }
+
+                if (admin.profilePic) {
+                    const oldFilePath = extractFilePath(admin.profilePic);
+                    try {
+                        await bucket.file(oldFilePath).delete();
+                    } catch (error) {
+                        console.error(`Error deleting file from Firebase Storage: ${error.message}`);
+                    }
+                }
+
+                const destination = `admin/profile/${userUid}`;
+                try {
+                    const publicUrl = await uploadFile(file, destination);
+
+                    admin.profilePic = publicUrl;
+                    await admin.save();
+                } catch (error) {
+                    console.error(`Error uploading file to Firebase Storage: ${error.message}`);
+                    return res.status(500).json({
+                        status: "error",
+                        message: "Error uploading file to Firebase Storage"
+                    });
+                }
+
+                return res.status(200).json({
+                    status: "success",
+                    message: "Profile picture added successfully"
+                });
+
+            } else if (role === "employee") {
+                const employee = await Employee.findOne({ uid: userUid });
+                if (!employee) {
+                    return res.status(404).json({
+                        status: "error",
+                        message: "Employee not found"
+                    });
+                }
+
+                if (employee.profilePic) {
+                    const oldFilePath = extractFilePath(employee.profilePic);
+                    try {
+                        await bucket.file(oldFilePath).delete();
+                    } catch (error) {
+                        console.error(`Error deleting file from Firebase Storage: ${error.message}`);
+                    }
+                }
+
+                const destination = `employee/profile/${userUid}`;
+                try {
+                    const publicUrl = await uploadFile(file, destination);
+
+                    employee.profilePic = publicUrl;
+                    await employee.save();
+                } catch (error) {
+                    console.error(`Error uploading file to Firebase Storage: ${error.message}`);
+                    return res.status(500).json({
+                        status: "error",
+                        message: "Error uploading file to Firebase Storage"
+                    });
+                }
+
+                return res.status(200).json({
+                    status: "success",
+                    message: "Profile picture added successfully"
+                });
+
+            } else {
+                return res.status(400).json({
+                    status: "error",
+                    message: "Invalid role"
+                });
+
+            }
+
+
+        }
+        catch (error) {
+            console.error('Profile picture add error:', error);
+            res.status(500).json({
+                status: "error",
+                message: "An error occurred while adding the profile picture.",
+                error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            });
+        }
+    }
+
+]
+

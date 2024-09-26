@@ -2,6 +2,7 @@ const Employee = require("../../models/Employee/EmployeeModel");
 const { generateToken } = require("../../helpers/token");
 const LoginHistory = require("../../models/Shared/LoginHistoryModel");
 const LastSeen = require("../../models/Shared/LastSeenHistroyModel");
+const { getSignedUrl, extractFilePath, uploadFile } = require("../../config/firebaseStorage");
 
 exports.loginEmployee = async (req, res) => {
     try {
@@ -34,8 +35,8 @@ exports.loginEmployee = async (req, res) => {
         const lastSeen = new LastSeen({
             employeeid: employee._id,
             date: new Date(),
-            accuracy: 100, 
-            address: req.ip || 'Unknown' 
+            accuracy: 100,
+            address: req.ip || 'Unknown'
         });
         await lastSeen.save();
 
@@ -52,7 +53,8 @@ exports.loginEmployee = async (req, res) => {
                 lname: employee.lname,
                 email: employee.email,
                 userName: employee.userName,
-                role: employee.role
+                role: employee.role,
+                profilePic: employee.profilePic ? await getSignedUrl(extractFilePath(employee.profilePic)) : null
             },
             token
         });
@@ -61,3 +63,26 @@ exports.loginEmployee = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error logging in employee' });
     }
 };
+
+exports.getEmployeeProfile = async (req, res) => {
+    try {
+        const employee = await Employee.findOne({ uid: req.uid }).select('-password').populate('loginHistory');
+        if (!employee) {
+            return res.status(404).json({ status: 'error', message: 'Employee not found' });
+        }
+
+        if (employee.profilePic) {
+            employee.profilePic = await getSignedUrl(extractFilePath(employee.profilePic));
+        }
+
+        res.json({
+            status: 'success',
+            message: 'Profile fetched successfully',
+            data: employee
+        });
+    } catch (error) {
+        console.error('Profile fetch error:', error);
+        res.status(500).json({ status: 'error', message: 'Error fetching profile' });
+    }
+    
+}

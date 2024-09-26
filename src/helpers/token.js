@@ -42,6 +42,7 @@ async function verifyToken(req, res, next) {
 
         req.uid = decoded.uid;
         req._id = decoded._id;
+        req.role = decoded.role;
         next();
     });
 }

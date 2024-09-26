@@ -3,6 +3,10 @@ const { goodPassword, getPasswordErrors } = require("../../helpers/password");
 const Admin = require("../../models/Admin/AdminModel");
 const LoginHistory = require("../../models/Shared/LoginHistoryModel");
 const LastSeen = require("../../models/Shared/LastSeenHistroyModel");
+const { getSignedUrl, extractFilePath, uploadFile } = require("../../config/firebaseStorage");
+
+const admin = require('firebase-admin');
+const bucket = admin.storage().bucket();
 
 exports.registerAdmin = async (req, res) => {
     try {
@@ -34,7 +38,7 @@ exports.registerAdmin = async (req, res) => {
                 message: 'Password does not meet the requirements'
             });
         }
-        
+
 
         // Check if admin already exists
         const existingAdmin = await Admin.findOne({ $or: [{ email }, { userName }] });
@@ -104,8 +108,8 @@ exports.loginAdmin = async (req, res) => {
         const lastSeen = new LastSeen({
             adminid: admin._id,
             date: new Date(),
-            accuracy: 100, 
-            address: req.ip || 'Unknown' 
+            accuracy: 100,
+            address: req.ip || 'Unknown'
         });
         await lastSeen.save();
         // Update admin's loginHistory reference
@@ -121,7 +125,8 @@ exports.loginAdmin = async (req, res) => {
                 lname: admin.lname,
                 email: admin.email,
                 userName: admin.userName,
-                role: admin.role
+                role: admin.role,
+                profilePic: admin.profilePic ? await getSignedUrl(extractFilePath(admin.profilePic)) : null
             },
             token
         });
@@ -132,14 +137,15 @@ exports.loginAdmin = async (req, res) => {
 };
 exports.getAdminProfile = async (req, res) => {
     try {
-        const admin = await Admin.findOne({ uid: req.uid }).select('-password');
+        const admin = await Admin.findOne({ uid: req.uid }).select('-password').populate('loginHistory');
         if (!admin) {
             return res.status(404).json({ status: 'error', message: 'Admin not found' });
         }
 
-        //Only include the last 10 logins
-        admin.loginHistory = admin.loginHistory.slice(-10);
-        
+        if (admin.profilePic) {
+            admin.profilePic = await getSignedUrl(extractFilePath(admin.profilePic));
+        }
+
         res.json(
             {
                 status: 'success',
@@ -215,3 +221,4 @@ exports.updateAdminPassword = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error updating password' });
     }
 };
+

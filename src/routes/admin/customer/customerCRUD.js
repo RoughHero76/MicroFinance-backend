@@ -9,16 +9,16 @@ const {
     deleteCustomer,
     getTotalCustomers,
     addProfilePicture
-} = require('../../../controllers/admin/customerController'); 
-const { verifyToken } = require("../../../helpers/token");
+} = require('../../../controllers/admin/customerController');
+const { verifyToken, adminCheck } = require("../../../helpers/token");
 
 // Private Routes
 
-router.get('/', verifyToken, getCustomers);
-router.post('/', verifyToken, registerCustomer);
-router.put('/', verifyToken, updateCustomer); 
-router.delete('/', verifyToken, deleteCustomer); 
-router.get('/count/total', verifyToken, getTotalCustomers);
-router.post('/profile/porfilePicture', verifyToken, addProfilePicture);
+router.get('/', verifyToken, adminCheck, getCustomers);
+router.post('/', verifyToken, adminCheck, registerCustomer);
+router.put('/', verifyToken, adminCheck, updateCustomer);
+router.delete('/', verifyToken, adminCheck, deleteCustomer);
+router.get('/count/total', verifyToken, adminCheck, getTotalCustomers);
+router.post('/profile/porfilePicture', verifyToken, adminCheck, addProfilePicture);
 
 module.exports = router; 

@@ -21,29 +21,29 @@ const {
 const {
   getRepaymentSchedule,
 } = require('../../../controllers/admin/loans/RepaymentScheduleController');
-const { verifyToken } = require("../../../helpers/token");
+const { verifyToken, adminCheck } = require("../../../helpers/token");
 
 /******* Private Routes ********/
 
-router.get('/', verifyToken, getLoans);
-router.post('/', verifyToken, createLoan);
-router.delete('/', verifyToken, deleteLoan);
-router.post('/close', verifyToken, closeLoan);
-router.get('/approve', verifyToken, approveLoan);
-router.get('/reject', verifyToken, rejectLoan);
-router.post('/assign', verifyToken, assignLoanToEmployee);
-router.get('/count/total', verifyToken, getCountofLoans);
-router.get('/count/market/details', verifyToken, getTotalMarketDetails);
+router.get('/', verifyToken, adminCheck, getLoans);
+router.post('/', verifyToken, adminCheck, createLoan);
+router.delete('/', verifyToken, adminCheck, deleteLoan);
+router.post('/close', verifyToken, adminCheck, closeLoan);
+router.get('/approve', verifyToken, adminCheck, approveLoan);
+router.get('/reject', verifyToken, adminCheck, rejectLoan);
+router.post('/assign', verifyToken, adminCheck, assignLoanToEmployee);
+router.get('/count/total', verifyToken, adminCheck, getCountofLoans);
+router.get('/count/market/details', verifyToken, adminCheck, getTotalMarketDetails);
 
 //Repayments Routes
-router.get('/repayment/schedule', verifyToken, getRepaymentSchedule);
-router.get('/repayment/history', verifyToken, getRepaymentHistory);
-router.get('/repayment/history/approve', verifyToken, getRepaymentHistoryToApprove);
-router.post('/repayment/history/approve', verifyToken, approveRepaymentHistory);
+router.get('/repayment/schedule', verifyToken, adminCheck, getRepaymentSchedule);
+router.get('/repayment/history', verifyToken, adminCheck, getRepaymentHistory);
+router.get('/repayment/history/approve', verifyToken, adminCheck, getRepaymentHistoryToApprove);
+router.post('/repayment/history/approve', verifyToken, adminCheck, approveRepaymentHistory);
 
 //Penalty Routes
-router.post('/apply/planalty', verifyToken, applyPenaltyToALoanInstallment);
-router.post('/remove/planalty', verifyToken, removePenaltyFromALoanInstallment);
+router.post('/apply/planalty', verifyToken, adminCheck, applyPenaltyToALoanInstallment);
+router.post('/remove/planalty', verifyToken, adminCheck, removePenaltyFromALoanInstallment);
 
 
 

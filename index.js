@@ -3,8 +3,14 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
+//Crone
+const cron = require('node-cron');
+const { pendingToOverdue } = require('./src/crone/RepaymentScheduleCrone');
+
+
 const connectDB = require('./src/config/databaseConfig');
 const routes = require('./src');
+
 
 dotenv.config();
 
@@ -19,8 +25,13 @@ const RETRY_INTERVAL = 5000; // 5 seconds
 function startServer(retryCount = 0) {
   connectDB().then(() => {
     console.log('Connected to MongoDB');
+
+
+    cron.schedule('0 23 * * *', async () => {
+      await pendingToOverdue();
+      console.log('Cron job executed at 11 PM');
+    });
     
-    // Use routes
     app.use('/api', routes);
 
     app.use(express.static(path.join(__dirname, 'public')));
@@ -35,7 +46,7 @@ function startServer(retryCount = 0) {
     });
   }).catch((error) => {
     console.error('Failed to connect to MongoDB:', error);
-    
+
     if (retryCount < MAX_RETRIES) {
       console.log(`Retrying connection in ${RETRY_INTERVAL / 1000} seconds...`);
       setTimeout(() => startServer(retryCount + 1), RETRY_INTERVAL);

@@ -1,3 +1,4 @@
+//src/controllers/admin/loans/RepaymentScheduleController.js
 const Loan = require('../../../models/Customers/Loans/LoanModel');
 const Repayment = require('../../../models/Customers/Loans/Repayment/Repayments');
 const RepaymentSchedule = require('../../../models/Customers/Loans/Repayment/RepaymentScheduleModel');

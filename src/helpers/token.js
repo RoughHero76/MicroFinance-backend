@@ -38,8 +38,6 @@ async function verifyToken(req, res, next) {
                 return res.status(401).json({ message: 'Invalid token' });
             }
         }
-
-
         req.uid = decoded.uid;
         req._id = decoded._id;
         req.role = decoded.role;
@@ -48,16 +46,17 @@ async function verifyToken(req, res, next) {
 }
 
 
+async function adminCheck(req, res, next) {
 
-async function useRoleAdmin(req, res, next) {
-    if (req.user.role === 'admin') {
-        next();
+    if (req.role === 'admin') { 
+        next(); 
     } else {
-        return res.status(403).json({ message: 'Unauthorized' });
+        return res.status(403).json({ message: 'Unauthorized' }); // Send unauthorized response
     }
 }
 
-async function userRoleEmployee(req, res, next) {
+
+async function roleChecks(req, res, next) {
     if (req.user.role === 'employee') {
         next();
     } else if (req.user.role === 'admin') {
@@ -71,6 +70,6 @@ async function userRoleEmployee(req, res, next) {
 module.exports = {
     generateToken,
     verifyToken,
-    useRoleAdmin,
-    userRoleEmployee
+    adminCheck,
+    roleChecks
 };

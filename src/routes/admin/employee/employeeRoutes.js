@@ -11,15 +11,15 @@ const {
     softDeleteEmployee,
     getTotalEmployees
 } = require('../../../controllers/admin/employeeController');
-const { verifyToken } = require("../../../helpers/token");
+const { verifyToken, adminCheck, } = require("../../../helpers/token");
 
 
-router.get('/', verifyToken, getEmployees);
-router.get('/total', verifyToken, getTotalEmployees);
-router.post('/', verifyToken, registerEmployee);
-router.put('/', verifyToken, updateEmployee);
-router.delete('/', verifyToken, softDeleteEmployee);
-router.delete('/hard/delete', verifyToken, deleteEmployee);
+router.get('/', verifyToken, adminCheck, getEmployees);
+router.get('/total', verifyToken, adminCheck, getTotalEmployees);
+router.post('/', verifyToken, adminCheck, registerEmployee);
+router.put('/', verifyToken, adminCheck, updateEmployee);
+router.delete('/', verifyToken, adminCheck, softDeleteEmployee);
+router.delete('/hard/delete', verifyToken, adminCheck, deleteEmployee);
 
 module.exports = router;
 

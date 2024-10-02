@@ -3,8 +3,8 @@
 const express = require('express');
 const router = express.Router();
 const { getDashboardData } = require('../../controllers/admin/DashboardController');
-const { verifyToken } = require("../../helpers/token");
+const { verifyToken, adminCheck } = require("../../helpers/token");
 
-router.get('/', verifyToken, getDashboardData);
+router.get('/', verifyToken, adminCheck, getDashboardData);
 
 module.exports = router;

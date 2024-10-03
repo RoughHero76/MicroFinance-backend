@@ -257,6 +257,11 @@ exports.payACustomerInstallment = async (req, res) => {
 
         await loan.save();
 
+
+        const employee = await Employee.findById(req._id);
+        employee.collectedRepayments.push(newRepayment._id);
+        await employee.save();
+
         res.status(200).json({
             status: 'success',
             message: 'Payment processed successfully',

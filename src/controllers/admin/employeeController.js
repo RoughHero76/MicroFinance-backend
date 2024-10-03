@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Employee = require('../../models/Employee/EmployeeModel');
 const { goodPassword, getPasswordErrors } = require('../../helpers/password');
 const Loan = require('../../models/Customers/Loans/LoanModel');
+const { getSignedUrl, extractFilePath } = require('../../config/firebaseStorage');
 
 // Register a new Employee
 exports.registerEmployee = async (req, res) => {
@@ -96,10 +97,20 @@ exports.getEmployees = async (req, res) => {
         // Get the total count of documents for pagination
         const total = await Employee.countDocuments(query);
 
+        // Extract profile picture URLs using Promise.all
+        const employeesWithPics = await Promise.all(
+            employees.map(async (employee) => {
+                if (employee.profilePic) {
+                    employee.profilePic = await getSignedUrl(extractFilePath(employee.profilePic));
+                }
+                return employee;
+            })
+        );
+
         // Send response
         res.json({
             status: 'success',
-            data: employees,
+            data: employeesWithPics,
             page: Number(page),
             limit: Number(limit),
             total

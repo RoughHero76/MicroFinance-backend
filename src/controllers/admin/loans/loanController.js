@@ -197,6 +197,17 @@ exports.deleteLoan = async (req, res) => {
         // Delete Repayment Schedule
         await RepaymentSchedule.deleteMany({ loan: loanId }, { session });
 
+        // Remove Repayment Collection from Employee
+        const repayments = await Repayment.find({ loan: loanId });
+        const employee = await Employee.findById(loan.assignedTo);
+
+        if (employee) {
+            // Filter out repayments based on their ObjectIds
+            const repaymentIds = repayments.map(r => r._id.toString());
+            employee.collectedRepayments = employee.collectedRepayments.filter(r => !repaymentIds.includes(r.toString()));
+            await employee.save({ session });
+        }
+
         // Delete Repayments 
         await Repayment.deleteMany({ loan: loanId }, { session });
 

@@ -146,7 +146,187 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
         res.status(500).json({ status: 'error', message: "Error getting today's collections" });
     }
 };
+
 exports.payACustomerInstallment = async (req, res) => {
+    try {
+        const { loanId, repaymentScheduleId, amount, paymentMethod, transactionId } = req.body;
+        const collectedBy = req._id;
+
+        const loan = await Loan.findById(loanId);
+        if (!loan) {
+            return res.status(404).json({ status: 'error', message: 'Loan not found' });
+        }
+
+        const currentSchedule = await RepaymentSchedule.findOne({
+            loan: loanId,
+            _id: repaymentScheduleId,
+            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+        });
+
+        if (!currentSchedule) {
+            return res.status(404).json({ status: 'error', message: 'No pending repayment schedule found' });
+        }
+
+        let remainingAmount = amount;
+        let processedSchedules = [];
+        let processedAmount = 0;
+        let logicNoteDetails = [];
+
+        // Create a single repayment record
+        const newRepayment = new Repayment({
+            repaymentSchedule: [],
+            amount: 0,
+            paymentMethod,
+            transactionId,
+            loan: loanId,
+            balanceAfterPayment: loan.outstandingAmount,
+            collectedBy,
+            LogicNote: ''
+        });
+
+        // Function to process a single repayment schedule
+        const processSchedule = async (schedule, isCurrentSchedule = false) => {
+            const originalAmount = schedule.originalAmount || schedule.amount;
+            const amountToPay = Math.min(remainingAmount, originalAmount - (schedule.amount - originalAmount));
+
+            schedule.amount = originalAmount;
+            schedule.repayments.push(newRepayment._id);
+
+            let logicNote = '';
+            let statusChange = '';
+
+            if (amountToPay >= originalAmount) {
+                if (schedule.status === 'Overdue') {
+                    schedule.status = 'OverduePaid';
+                    statusChange = 'Overdue → OverduePaid';
+                    logicNote = 'Overdue amount fully paid';
+                } else if (schedule.status === 'PartiallyPaid') {
+                    schedule.status = 'PartiallyPaidFullyPaid';
+                    statusChange = 'PartiallyPaid → PartiallyPaidFullyPaid';
+                    logicNote = 'Partially paid amount now fully paid';
+                } else {
+                    schedule.status = 'Paid';
+                    statusChange = 'Pending → Paid';
+                    logicNote = 'Full amount paid';
+                }
+            } else if (amountToPay > 0) {
+                if (isCurrentSchedule && amountToPay < originalAmount / 2) {
+                    throw new Error('Partial payment must be at least half of the scheduled amount');
+                }
+                if (schedule.status === 'PartiallyPaid' && isCurrentSchedule) {
+                    throw new Error('Cannot make another partial payment on the current schedule');
+                }
+                schedule.status = 'PartiallyPaid';
+                statusChange = `${schedule.status} → PartiallyPaid`;
+                logicNote = `Partial payment made: ${amountToPay} out of ${originalAmount}`;
+            }
+
+            if (!schedule.paymentDate) {
+                schedule.paymentDate = Date.now();
+            }
+
+            schedule.LogicNote = logicNote;
+            await schedule.save();
+
+            loan.totalPaid += amountToPay;
+            loan.outstandingAmount -= amountToPay;
+            remainingAmount -= amountToPay;
+
+            processedSchedules.push({
+                scheduleId: schedule._id,
+                amountPaid: amountToPay,
+                status: schedule.status,
+                logicNote
+            });
+
+            logicNoteDetails.push(`Schedule ${schedule._id}: ${statusChange}. ${logicNote}`);
+
+            return amountToPay;
+        };
+
+        // Process the current repayment schedule
+        processedAmount += await processSchedule(currentSchedule, true);
+
+        // If there's remaining amount, process overdue and partially paid schedules
+        if (remainingAmount > 0) {
+            const overdueSchedules = await RepaymentSchedule.find({
+                loan: loanId,
+                status: { $in: ['Overdue', 'PartiallyPaid'] },
+                _id: { $ne: repaymentScheduleId }
+            }).sort({ dueDate: 1 });
+
+            if (overdueSchedules.length > 0) {
+                logicNoteDetails.push(`Processing ${overdueSchedules.length} overdue/partially paid schedules.`);
+            }
+
+            for (const schedule of overdueSchedules) {
+                if (remainingAmount <= 0) break;
+                processedAmount += await processSchedule(schedule);
+            }
+        }
+
+        // If there's still remaining amount, check if it's a valid advance payment
+        if (remainingAmount > 0) {
+            const futureSchedules = await RepaymentSchedule.find({
+                loan: loanId,
+                status: 'Pending',
+                dueDate: { $gt: new Date() }
+            }).sort({ dueDate: 1 });
+
+            if (futureSchedules.length > 0) {
+                const scheduleAmount = futureSchedules[0].amount;
+                if (remainingAmount % scheduleAmount !== 0) {
+                    throw new Error('Advance payment must be a multiple of the repayment schedule amount');
+                }
+
+                logicNoteDetails.push(`Processing advance payment for ${remainingAmount / scheduleAmount} future schedules.`);
+
+                for (const schedule of futureSchedules) {
+                    if (remainingAmount <= 0) break;
+                    processedAmount += await processSchedule(schedule);
+                    if (schedule.status === 'Paid') {
+                        schedule.status = 'AdvancePaid';
+                        schedule.LogicNote = 'Advance payment made';
+                        await schedule.save();
+                        logicNoteDetails.push(`Schedule ${schedule._id}: Pending → AdvancePaid`);
+                    }
+                }
+            } else {
+                throw new Error('No future schedules found for advance payment');
+            }
+        }
+
+        // Update the repayment record
+        newRepayment.amount = processedAmount;
+        newRepayment.repaymentSchedule = processedSchedules.map(ps => ps.scheduleId);
+        newRepayment.balanceAfterPayment = loan.outstandingAmount;
+        newRepayment.LogicNote = logicNoteDetails.join(' | ');
+        await newRepayment.save();
+
+        await loan.save();
+
+        const employee = await Employee.findById(req._id);
+        employee.collectedRepayments.push(newRepayment._id);
+        await employee.save();
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Payment processed successfully',
+            data: {
+                totalPaid: processedAmount,
+                processedSchedules,
+                remainingAmount,
+                repaymentDetails: newRepayment
+            }
+        });
+    } catch (error) {
+        console.error('Payment error:', error);
+        res.status(400).json({ status: 'error', message: error.message });
+    }
+};
+
+// below is old logic if something goes wrong with new logic
+/* exports.payACustomerInstallment = async (req, res) => {
     try {
         const { loanId, repaymentScheduleId, amount, paymentMethod, transactionId } = req.body;
         const collectedBy = req._id;
@@ -275,7 +455,7 @@ exports.payACustomerInstallment = async (req, res) => {
         console.error('Payment error:', error);
         res.status(500).json({ status: 'error', message: 'Error in paying installment' });
     }
-};
+}; */
 exports.getCustomers = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;

@@ -19,7 +19,7 @@ const repaymentScheduleSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Paid', 'PartiallyPaid', 'Overdue', 'AdvancePaid', 'OverduePaid', 'Waived'],
+        enum: ['Pending', 'Paid', 'PartiallyPaid', 'PartiallyPaidFullyPaid', 'Overdue', 'AdvancePaid', 'OverduePaid', 'Waived'],
         default: 'Pending'
     },
     penaltyApplied: {
@@ -39,10 +39,13 @@ const repaymentScheduleSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee'
     },
+    LogicNote: {
+        type: String
+    },
     loanInstallmentNumber: Number
 }, { timestamps: true });
 
-repaymentScheduleSchema.virtual('isOverdue').get(function() {
+repaymentScheduleSchema.virtual('isOverdue').get(function () {
     return this.status === 'Overdue';
 });
 

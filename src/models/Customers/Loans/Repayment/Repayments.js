@@ -36,6 +36,9 @@ const repaymentSchema = new mongoose.Schema({
     collectedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee'
+    },
+    LogicNote: {
+        type: String
     }
 }, { timestamps: true });
 

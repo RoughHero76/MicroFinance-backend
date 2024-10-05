@@ -39,7 +39,7 @@ const repaymentScheduleSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Employee'
     },
-    LogicNote: {
+    logicNote: {
         type: String
     },
     loanInstallmentNumber: Number

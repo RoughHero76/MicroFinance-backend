@@ -24,6 +24,7 @@ exports.search = async (req, res) => {
                 { email: { $regex: query, $options: 'i' } },
                 { phoneNumber: { $regex: query, $options: 'i' } },
                 { userName: { $regex: query, $options: 'i' } }
+
             ];
         }
 

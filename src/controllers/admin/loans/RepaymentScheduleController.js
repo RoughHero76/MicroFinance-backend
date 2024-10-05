@@ -276,16 +276,16 @@ async function handlePartiallyPaidToOthers(repaymentSchedule, newStatus, data, l
             await removePenalty(repaymentSchedule);
             break;
         case "Paid":
-            await updateRepaymentAmount(repaymentSchedule, data.amount, data.transactionId);;
             await removePenalty(repaymentSchedule);
+            await updateRepaymentAmount(repaymentSchedule, data.amount, data.transactionId);;
             break;
         case "Overdue":
             await removeRepayment(repaymentSchedule);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "AdvancePaid":
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
             await removePenalty(repaymentSchedule);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
             break;
         case "OverduePaid":
             await updateRepaymentAmount(repaymentSchedule, data.amount, data.transactionId);;
@@ -304,11 +304,12 @@ async function handleOverdueToOthers(repaymentSchedule, newStatus, data, loan) {
             await removePenalty(repaymentSchedule);
             break;
         case "Paid":
-            if (!data.paymentDate) {
-                throw new Error("Payment date is required");
+            if (!data.paymentDate || !loan || !data.paymentMethod) {
+                throw new Error("Payment date, loan, and payment method are required");
             }
+            console.log('Overdue To Paid: Loan is', loan);
             await removePenalty(repaymentSchedule);
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
             break;
         case "PartiallyPaid":
             if (!data.paymentDate || !data.amount) {
@@ -389,8 +390,8 @@ async function handleOverduePaidToOthers(repaymentSchedule, newStatus, data, loa
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "AdvancePaid":
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
             await removePenalty(repaymentSchedule);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
             break;
         case "Waived":
             await removeRepayment(repaymentSchedule);
@@ -619,49 +620,35 @@ async function createRepayment(repaymentSchedule, paymentDate, amount, loan, pay
         // Update existing repayment
         const existingRepayment = await Repayment.findById(repaymentSchedule.repayments[0]);
         if (existingRepayment) {
-            console.log("Repayment exsits for this repayment schedule", existingRepayment);
-            existingRepayment.amount = amount;
-            existingRepayment.paymentDate = paymentDate;
-            existingRepayment.paymentMethod = paymentMethod;
-            existingRepayment.transactionId = transactionId || null;
-            existingRepayment.collectedBy = collectedBy;
+            console.log("Repayment exists for this repayment schedule", existingRepayment);
+            existingRepayment.amount = amount || existingRepayment.amount;
+            existingRepayment.paymentDate = paymentDate || existingRepayment.paymentDate;
+            existingRepayment.paymentMethod = paymentMethod || existingRepayment.paymentMethod;
+            existingRepayment.transactionId = transactionId || existingRepayment.transactionId;
+            existingRepayment.collectedBy = collectedBy || existingRepayment.collectedBy;
             existingRepayment.status = "Pending";
-            existingRepayment.balanceAfterPayment = await calculateBalanceAfterPayment(loan, amount);
+            existingRepayment.balanceAfterPayment = loan.outstandingAmount - amount;
             await existingRepayment.save();
             return;
         }
     }
 
-    //If User doesn't provide amount, paymentDate, paymentMethod, transactionId, collectedBy
-    //then we can take amount, paymentDate from repayment schedule
-    // and set paymentMethod to "Cash", transactionId to null and collectedBy to null
-
     let message = "";
 
-    if (!amount) {
-        amount = repaymentSchedule.amount;
-        message += "amount was added from repayment schedule. ";
-    }
-    if (!paymentDate) {
-        paymentDate = repaymentSchedule.paymentDate;
-        message += "paymentDate was added from repayment schedule. ";
+    // Set default values if not provided
+    amount = amount || repaymentSchedule.amount;
+    paymentDate = paymentDate || repaymentSchedule.paymentDate;
+    paymentMethod = paymentMethod || "Cash";
+    transactionId = transactionId || null;
+    collectedBy = collectedBy || null;
 
-    }
-    if (!paymentMethod) {
-        paymentMethod = "Cash";
-        message += "paymentMethod was set to Cash. ";
-    }
-    if (!transactionId) {
-        transactionId = null;
-        message += "transactionId was set to null. ";
-    }
-    if (!collectedBy) {
-        collectedBy = null;
-        message += "collectedBy was set to null. ";
+    if (!loan || typeof loan.outstandingAmount !== 'number') {
+        throw new Error("Invalid loan object or missing outstandingAmount");
     }
 
+    const balanceAfterPayment = loan.outstandingAmount - amount;
 
-    // Create new repayment if it doesn't exist
+    console.log(`Balance After Repayment: ${balanceAfterPayment}`);
     console.log("Creating new repayment");
     const newRepayment = new Repayment({
         repaymentSchedule: repaymentSchedule._id,
@@ -671,33 +658,32 @@ async function createRepayment(repaymentSchedule, paymentDate, amount, loan, pay
         transactionId: transactionId,
         loan: loan._id,
         status: "Pending",
-        balanceAfterPayment: await calculateBalanceAfterPayment(loan, amount),
+        balanceAfterPayment: balanceAfterPayment,
         collectedBy: collectedBy
     });
+
     console.log("Saving new repayment");
     await newRepayment.save();
     console.log("Adding new repayment to repaymentSchedule");
     repaymentSchedule.repayments.push(newRepayment._id);
 
     console.log("Updating loan");
-    let loanSave = await Loan.findById(repaymentSchedule.loan._id);
-    if (!loanSave) {
-        throw new Error("Loan not found");
-    }
-    console.log("Loan found: ", loanSave);
-    loanSave.outstandingAmount = await calculateBalanceAfterPayment(loan, amount);
-    console.log(`Loan outstanding amount: ${loanSave.outstandingAmount}`);
-    loanSave.totalPaid = loan.totalPaid + amount;
-    console.log(`Loan total paid: ${loanSave.totalPaid}`);
-    await loanSave.save();
+    loan.outstandingAmount = balanceAfterPayment;
+    loan.totalPaid = (loan.totalPaid || 0) + amount;
+    await loan.save();
     console.log("Successfully updated loan");
 
     return message;
-} function calculatePenaltyAmount(repaymentSchedule) {
+}
+function calculatePenaltyAmount(repaymentSchedule) {
     return repaymentSchedule.originalAmount * 0.1; // 10% of the scheduled amount as penalty
 }
 
 function calculateBalanceAfterPayment(loan, amount) {
+    console.log("Loan : ", loan);
+    console.log("OutStanding Amount : ", loan.outstandingAmount);
+    console.log("Amount : ", amount);
+    console.log("OutStanding Amount - Amount : ", loan.outstandingAmount - amount);
     return loan.outstandingAmount - amount;
 }
 

@@ -69,9 +69,6 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
     try {
         const id = req._id;
         let { date } = req.query;
-
-        console.log('ID :', id);
-
         // If no date is provided, use the current date in IST
         if (!date) {
             date = moment().tz('Asia/Kolkata').format('YYYY-MM-DD');
@@ -120,6 +117,34 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                 $unwind: '$customerDetails'
             },
             {
+                // Fetch all overdue amounts including today's schedules
+                $lookup: {
+                    from: 'repaymentschedules',
+                    localField: 'loan',
+                    foreignField: 'loan',
+                    as: 'allSchedules'
+                }
+            },
+            {
+                $addFields: {
+                    totalOverdueAmount: {
+                        $sum: {
+                            $map: {
+                                input: '$allSchedules',
+                                as: 'schedule',
+                                in: {
+                                    $cond: [
+                                        { $and: [ { $lte: ['$$schedule.dueDate', endOfDay] }, { $in: ['$$schedule.status', ['Pending', 'PartiallyPaid', 'Overdue']] }] },
+                                        '$$schedule.amount',
+                                        0
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            {
                 $project: {
                     _id: 1,
                     dueDate: 1,
@@ -129,6 +154,7 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                     loan: {
                         _id: '$loanDetails._id',
                         loanAmount: '$loanDetails.loanAmount',
+                        totalOverdueAmount: '$totalOverdueAmount', // Total overdue amount added here
                         customer: {
                             _id: '$customerDetails._id',
                             fname: '$customerDetails.fname',
@@ -146,6 +172,7 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
         res.status(500).json({ status: 'error', message: "Error getting today's collections" });
     }
 };
+
 
 exports.payACustomerInstallment = async (req, res) => {
     const session = await mongoose.startSession();
@@ -182,7 +209,7 @@ exports.payACustomerInstallment = async (req, res) => {
             throw new Error('Payment must be at least half of the scheduled amount');
         }
 
-        // 4. Create repayment record
+        // 4. Create repayment record and save it to generate _id
         const newRepayment = new Repayment({
             repaymentSchedule: [],
             amount: amount,
@@ -192,6 +219,7 @@ exports.payACustomerInstallment = async (req, res) => {
             collectedBy,
             logicNote: ''
         });
+        await newRepayment.save({ session });
 
         // 5. Process current schedule
         if (remainingAmount >= scheduleAmount / 2) {

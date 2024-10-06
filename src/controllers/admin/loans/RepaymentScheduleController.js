@@ -13,7 +13,7 @@ exports.getRepaymentSchedule = async (req, res) => {
             return res.status(400).json({ status: 'error', message: 'Loan ID is required' });
         }
 
-        const loan = await Loan.findById(loanId);
+        const loan = await Loan.findById(loanId).select('status');
         if (!loan) {
             return res.status(404).json({ status: 'error', message: 'Loan not found' });
         }
@@ -43,9 +43,18 @@ exports.getRepaymentSchedule = async (req, res) => {
         const [total, repaymentSchedule] = await Promise.all([
             RepaymentSchedule.countDocuments(query),
             RepaymentSchedule.find(query)
+                .select('_id dueDate amount status penaltyApplied originalAmount loanInstallmentNumber')
                 .skip(skip)
                 .limit(limitNum)
                 .sort({ dueDate: 1 })
+                .populate({
+                    path: 'repayments',
+                    select: 'amount paymentDate paymentMethod transactionId status',
+                    populate: {
+                        path: 'collectedBy',
+                        select: 'fname lname'
+                    }
+                })
                 .lean()
         ]);
 
@@ -54,7 +63,7 @@ exports.getRepaymentSchedule = async (req, res) => {
             const penalties = await Penalty.find({
                 loan: loanId,
                 repaymentSchedule: { $in: repaymentIds }
-            }).lean();
+            }).select('repaymentSchedule amount reason appliedDate status').lean();
 
             const penaltyMap = penalties.reduce((acc, penalty) => {
                 acc[penalty.repaymentSchedule.toString()] = penalty;
@@ -66,13 +75,11 @@ exports.getRepaymentSchedule = async (req, res) => {
             });
         }
 
-        let loanStatus = loan.status;
-
         res.json({
             status: 'success',
             data: {
                 repaymentSchedule,
-                loanStatus,
+                loanStatus: loan.status,
                 currentPage: parseInt(page),
                 totalPages: Math.ceil(total / limitNum),
                 totalEntries: total
@@ -83,7 +90,6 @@ exports.getRepaymentSchedule = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
-
 /*
 
 

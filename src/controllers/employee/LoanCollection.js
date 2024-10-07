@@ -8,12 +8,10 @@ const moment = require('moment-timezone');
 const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
 const mongoose = require('mongoose');
 
-exports.collectionCountTody = async (req, res) => {
+exports.collectionCountToday = async (req, res) => {
     try {
         let { date } = req.query;
         const id = req._id;
-
-        console.log('ID :', id);
 
         // If no date is provided, use the current date in IST
         if (!date) {
@@ -65,6 +63,7 @@ exports.collectionCountTody = async (req, res) => {
         res.status(500).json({ status: 'error', message: "Error getting today's collection count" });
     }
 };
+
 exports.collectionsToBeCollectedToday = async (req, res) => {
     try {
         const id = req._id;
@@ -84,12 +83,6 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
 
         const collections = await RepaymentSchedule.aggregate([
             {
-                $match: {
-                    dueDate: { $gte: startOfDay, $lte: endOfDay },
-                    status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
-                }
-            },
-            {
                 $lookup: {
                     from: 'loans',
                     localField: 'loan',
@@ -102,7 +95,40 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
             },
             {
                 $match: {
-                    'loanDetails.assignedTo': new mongoose.Types.ObjectId(id)
+                    'loanDetails.assignedTo': new mongoose.Types.ObjectId(id),
+                    $or: [
+                        // Collections due today
+                        {
+                            dueDate: { $gte: startOfDay, $lte: endOfDay },
+                            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+                        },
+                        // Oldest pending schedule for loans past end date
+                        {
+                            'loanDetails.loanEndDate': { $lt: startOfDay },
+                            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+                        }
+                    ]
+                }
+            },
+            {
+                $sort: { dueDate: 1 } // Sort by dueDate to get the oldest schedule first
+            },
+            {
+                $group: {
+                    _id: '$loan',
+                    schedules: { $push: '$$ROOT' },
+                    oldestSchedule: { $first: '$$ROOT' }
+                }
+            },
+            {
+                $replaceRoot: {
+                    newRoot: {
+                        $cond: [
+                            { $lt: ['$oldestSchedule.loanDetails.loanEndDate', startOfDay] },
+                            '$oldestSchedule',
+                            { $arrayElemAt: ['$schedules', 0] }
+                        ]
+                    }
                 }
             },
             {
@@ -154,7 +180,8 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                     loan: {
                         _id: '$loanDetails._id',
                         loanAmount: '$loanDetails.loanAmount',
-                        totalOverdueAmount: '$totalOverdueAmount', // Total overdue amount added here
+                        loanEndDate: '$loanDetails.loanEndDate',
+                        totalOverdueAmount: '$totalOverdueAmount',
                         customer: {
                             _id: '$customerDetails._id',
                             fname: '$customerDetails.fname',

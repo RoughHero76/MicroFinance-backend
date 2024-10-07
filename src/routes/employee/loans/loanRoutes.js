@@ -11,13 +11,13 @@ const {
     getLoanDetails,
     applyPenaltyToALoanInstallment,
     getCustomers,
-    collectionCountTody,
+    collectionCountToday,
     getLoanStatistics,
     getRepaymentHistory
 } = require('../../../controllers/employee/LoanCollection');
 
 router.get('/collection/today', verifyToken, collectionsToBeCollectedToday);
-router.get('/collection/today/count', verifyToken, collectionCountTody);
+router.get('/collection/today/count', verifyToken, collectionCountToday);
 router.post('/pay', verifyToken, payACustomerInstallment);
 router.get('/customer/profile', verifyToken, getCustomerProfile);
 router.get('/customers', verifyToken, getCustomers);

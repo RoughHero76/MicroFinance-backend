@@ -17,15 +17,28 @@ exports.search = async (req, res) => {
     try {
         let searchQuery = {};
 
+        // If there is a general query (for name, email, etc.)
         if (query) {
             searchQuery.$or = [
                 { fname: { $regex: query, $options: 'i' } },
                 { lname: { $regex: query, $options: 'i' } },
                 { email: { $regex: query, $options: 'i' } },
                 { phoneNumber: { $regex: query, $options: 'i' } },
-                { userName: { $regex: query, $options: 'i' } }
-
+                { userName: { $regex: query, $options: 'i' } },
             ];
+        }
+
+        let customerIdsFromLoanSearch = [];
+
+        // If the query is intended to search loan numbers
+        if (query) {
+            const loans = await Loan.find({ loanNumber: { $regex: query, $options: 'i' } });
+            customerIdsFromLoanSearch = loans.map(loan => loan.customer.toString());
+        }
+
+        if (customerIdsFromLoanSearch.length > 0) {
+            searchQuery.$or = searchQuery.$or || [];
+            searchQuery.$or.push({ _id: { $in: customerIdsFromLoanSearch } });
         }
 
         const customers = await Customer.find(searchQuery)

@@ -102,5 +102,9 @@ const loanSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+loanSchema.index({ loanNumber: 1 });  // Ascending order index
+loanSchema.index({ uid: 1 });         // Ascending order index
+
 const Loan = mongoose.model('Loan', loanSchema);
+
 module.exports = Loan;

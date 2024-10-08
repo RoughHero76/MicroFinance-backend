@@ -76,7 +76,7 @@ exports.getCustomers = async (req, res) => {
             query.accountStatus = 'true';
         }
 
-        let loanFields = 'loanAmount loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments assignedTo status';
+        let loanFields = 'loanAmount loanNumber loanStartDate loanEndDate loanDuration totalPaid installmentFrequency numberOfInstallments assignedTo status';
         if (fullDetails === 'true') {
             loanFields = '';
         }

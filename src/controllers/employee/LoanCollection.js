@@ -160,7 +160,7 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                                 as: 'schedule',
                                 in: {
                                     $cond: [
-                                        { $and: [ { $lte: ['$$schedule.dueDate', endOfDay] }, { $in: ['$$schedule.status', ['Pending', 'PartiallyPaid', 'Overdue']] }] },
+                                        { $and: [{ $lte: ['$$schedule.dueDate', endOfDay] }, { $in: ['$$schedule.status', ['Pending', 'PartiallyPaid', 'Overdue']] }] },
                                         '$$schedule.amount',
                                         0
                                     ]
@@ -257,10 +257,10 @@ exports.payACustomerInstallment = async (req, res) => {
             currentSchedule.repayments.push(newRepayment._id);
             currentSchedule.collectedBy = collectedBy;
             newRepayment.repaymentSchedule.push(currentSchedule._id);
-            
+
             logicNoteDetails.push(`Schedule ${currentSchedule._id}: ${isFullPayment ? 'Full' : 'Partial'} payment - ${isFullPayment ? scheduleAmount : remainingAmount}`);
             remainingAmount -= isFullPayment ? scheduleAmount : remainingAmount;
-            
+
             schedulesToUpdate.push(currentSchedule);
         }
 
@@ -274,16 +274,16 @@ exports.payACustomerInstallment = async (req, res) => {
 
             for (const schedule of overdueSchedules) {
                 if (remainingAmount < scheduleAmount) break;
-                
+
                 schedule.status = 'OverduePaid';
                 schedule.paymentDate = Date.now();
                 schedule.repayments.push(newRepayment._id);
                 schedule.collectedBy = collectedBy;
                 newRepayment.repaymentSchedule.push(schedule._id);
-                
+
                 remainingAmount -= scheduleAmount;
                 logicNoteDetails.push(`Schedule ${schedule._id}: Overdue paid`);
-                
+
                 schedulesToUpdate.push(schedule);
             }
         }
@@ -307,11 +307,11 @@ exports.payACustomerInstallment = async (req, res) => {
                 schedule.repayments.push(newRepayment._id);
                 schedule.collectedBy = collectedBy;
                 newRepayment.repaymentSchedule.push(schedule._id);
-                
+
                 remainingAmount -= remainingScheduleAmount;
                 logicNoteDetails.push(`Schedule ${schedule._id}: Partially paid amount now fully paid`);
                 partialPaymentsMade = true;
-                
+
                 schedulesToUpdate.push(schedule);
             }
         }
@@ -323,14 +323,14 @@ exports.payACustomerInstallment = async (req, res) => {
                 if (partialPaymentsMade) {
                     throw new Error('Cannot have remaining partial amount after completing partial payments');
                 }
-                
+
                 if (remainingAmount === scheduleAmount / 2) {
                     throw new Error('Cannot make advance partial payment');
                 }
-                
+
                 throw new Error('Remaining amount must be zero or a full schedule amount');
             }
-            
+
             if (remainingAmount % scheduleAmount !== 0) {
                 throw new Error('Remaining amount for advance payment must be a multiple of the schedule amount');
             }
@@ -354,10 +354,10 @@ exports.payACustomerInstallment = async (req, res) => {
                 schedule.repayments.push(newRepayment._id);
                 schedule.collectedBy = collectedBy;
                 newRepayment.repaymentSchedule.push(schedule._id);
-                
+
                 remainingAmount -= scheduleAmount;
                 logicNoteDetails.push(`Schedule ${schedule._id}: Advance paid`);
-                
+
                 schedulesToUpdate.push(schedule);
             }
         }
@@ -717,24 +717,22 @@ exports.payACustomerInstallment = async (req, res) => {
 exports.getCustomers = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
+        const employeeId = req._id; // Assuming employee ID comes from req._id
 
         const skip = (page - 1) * limit;
 
-        // Fetch customers with limited data
+        // Fetch customers whose loans are assigned to this employee
         const customers = await Customer.find({})
             .skip(skip)
             .limit(Number(limit))
             .select('fname lname email phoneNumber address city profilePic')
             .populate({
                 path: 'loans',
+                match: { assignedTo: employeeId }, // Filter loans assigned to this employee
                 select: 'loanAmount status loanStartDate loanEndDate outstandingAmount',
             });
 
-        if (!customers) {
-            return res.status(404).json({ status: 'error', message: 'Customers not found' });
-        }
-
-        if (customers.length === 0) {
+        if (!customers || customers.length === 0) {
             return res.status(200).json({ status: 'success', message: 'No customers found' });
         }
 
@@ -745,25 +743,26 @@ exports.getCustomers = async (req, res) => {
             }
         }
 
-
-        // Only send the fields you want in the response
-        const filteredCustomers = customers.map(customer => ({
-            _id: customer._id,
-            fname: customer.fname,
-            lname: customer.lname,
-            profilePic: customer.profilePic,
-            email: customer.email,
-            phoneNumber: customer.phoneNumber,
-            address: customer.address,
-            city: customer.city,
-            loans: customer.loans.map(loan => ({
-                loanAmount: loan.loanAmount,
-                status: loan.status,
-                loanStartDate: loan.loanStartDate,
-                loanEndDate: loan.loanEndDate,
-                outstandingAmount: loan.outstandingAmount,
-            }))
-        }));
+        // Filter customers who have loans assigned to the employee
+        const filteredCustomers = customers
+            .filter(customer => customer.loans.length > 0) // Only customers with loans assigned to the employee
+            .map(customer => ({
+                _id: customer._id,
+                fname: customer.fname,
+                lname: customer.lname,
+                profilePic: customer.profilePic,
+                email: customer.email,
+                phoneNumber: customer.phoneNumber,
+                address: customer.address,
+                city: customer.city,
+                loans: customer.loans.map(loan => ({
+                    loanAmount: loan.loanAmount,
+                    status: loan.status,
+                    loanStartDate: loan.loanStartDate,
+                    loanEndDate: loan.loanEndDate,
+                    outstandingAmount: loan.outstandingAmount,
+                }))
+            }));
 
         res.status(200).json({ status: 'success', data: filteredCustomers });
     } catch (error) {
@@ -771,6 +770,7 @@ exports.getCustomers = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Error in getting customers' });
     }
 };
+
 
 
 exports.getCustomerProfile = async (req, res) => {

@@ -12,7 +12,7 @@ const loginHistorySchema = new mongoose.Schema({
     date: {
         type: Date,
         default: Date.now,
-        expires: '30d' 
+        expires: '15d' 
     },
     accuracy: {
         type: Number
@@ -22,6 +22,6 @@ const loginHistorySchema = new mongoose.Schema({
     }
 });
 
-loginHistorySchema.index({ date: 1 }, { expireAfterSeconds: 0 });
+loginHistorySchema.index({ date: 1 });
 
 module.exports = mongoose.model("LoginHistory", loginHistorySchema);

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download MicroFinance APK</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: #fff;
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 40px;
+            border-radius: 10px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(5px);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        #downloadBtn {
+            background-color: #00c853;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            color: white;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.3s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        #downloadBtn:hover {
+            background-color: #00e676;
+            transform: scale(1.05);
+        }
+
+        #downloadBtn:active {
+            background-color: #00c853;
+            transform: scale(0.95);
+        }
+
+        footer {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            width: 100%;
+            color: #ffffffbb;
+            font-size: 0.8rem;
+        }
+
+        footer a {
+            color: #00e676;
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Download MicroFinance APK</h1>
+        <button id="downloadBtn">Download Latest APK</button>
+    </div>
+
+    <footer>
+        © 2024 MicroFinance. <a href="#">Privacy Policy</a> | <a href="#">Terms of Use</a>
+    </footer>
+
+    <script>
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.href = 'https://microfinanace-g4fba3bye5cdggee.centralindia-01.azurewebsites.net/api/shared/app/update/download'; // Replace with your backend route
+            link.setAttribute('download', ''); // Backend sets the filename
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+
+</body>
+
+</html>

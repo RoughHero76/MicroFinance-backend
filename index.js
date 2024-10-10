@@ -31,7 +31,7 @@ function startServer(retryCount = 0) {
       await pendingToOverdue();
       console.log('Cron job executed at 11 PM');
     });
-    
+
     app.use('/api', routes);
 
     app.use(express.static(path.join(__dirname, 'public')));
@@ -39,6 +39,11 @@ function startServer(retryCount = 0) {
     app.get('/', (req, res) => {
       res.sendFile(path.join(__dirname, 'public', 'index.html'));
     });
+
+    app.get('/download', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public', 'download.html'));
+    });
+
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

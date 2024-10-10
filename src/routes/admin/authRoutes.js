@@ -9,6 +9,8 @@ const {
     updateAdminPassword,
 } = require('../../controllers/admin/authController');
 
+const { backupAndSendResponse } = require("../../helpers/backupUtils");
+
 // Public routes
 router.post('/register', registerAdmin);
 router.post('/login', loginAdmin);
@@ -17,6 +19,8 @@ router.post('/login', loginAdmin);
 router.get('/profile', verifyToken, adminCheck, getAdminProfile);
 router.put('/profile', verifyToken, adminCheck, updateAdminProfile);
 router.put('/password', verifyToken, adminCheck, updateAdminPassword);
+
+router.get('/database/backup', verifyToken, adminCheck, backupAndSendResponse);
 
 
 module.exports = router;

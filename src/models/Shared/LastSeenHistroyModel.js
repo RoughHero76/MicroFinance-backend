@@ -12,7 +12,7 @@ const lastSeenSchema = new mongoose.Schema({
     date: {
         type: Date,
         default: Date.now,
-        expires: '30d' 
+        expires: '7d'  // Document will automatically expire 30 days after this date
     },
     accuracy: {
         type: Number
@@ -21,7 +21,5 @@ const lastSeenSchema = new mongoose.Schema({
         type: String
     }
 });
-
-lastSeenSchema.index({ date: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.model("LastSeen", lastSeenSchema);

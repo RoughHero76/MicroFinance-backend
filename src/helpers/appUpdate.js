@@ -1,5 +1,6 @@
 const axios = require('axios');
-const fs = require('fs').promises;
+const fs = require('fs-extra').promises;
+const fsEmpty = require('fs-extra')
 const fsSync = require('fs');
 const path = require('path');
 const stream = require('stream');
@@ -278,6 +279,15 @@ exports.downloadApk = async (req, res) => {
         }
 
         if (!apkExists) {
+            if (cacheDir) {
+                fsEmpty.emptyDir()
+                    .then(() => {
+                        console.log('success!')
+                    })
+                    .catch(err => {
+                        console.error(err)
+                    })
+            }
             console.log(`Downloading APK from ${apkAsset.url}`);
             const apkResponse = await downloadClient.get(apkAsset.url, {
                 headers: {

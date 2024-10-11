@@ -24,7 +24,7 @@ const repaymentSchema = new mongoose.Schema({
     transactionId: String,
     status: {
         type: String,
-        enum: ['Pending', 'Approved', 'Failed'],
+        enum: ['Pending', 'Approved', 'Rejected'],
         default: 'Pending'
     },
     loan: {

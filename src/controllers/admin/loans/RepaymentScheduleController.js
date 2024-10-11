@@ -333,9 +333,9 @@ async function handleOverdueToOthers(repaymentSchedule, newStatus, data, loan) {
             break;
         case "OverduePaid":
             if (!data.paymentDate) {
-                throw new Error("Payment date and amount are required");
+                throw new Error("Payment date is required");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
             break;
         case "Waived":
             await removePenalty(repaymentSchedule);

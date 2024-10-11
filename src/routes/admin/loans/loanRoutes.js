@@ -13,6 +13,7 @@ const {
   getRepaymentHistory,
   getRepaymentHistoryToApprove,
   approveRepaymentHistory,
+  rejectRepaymentHistory,
   assignLoanToEmployee,
   applyPenaltyToALoanInstallment,
   removePenaltyFromALoanInstallment,
@@ -21,6 +22,7 @@ const {
 const {
   getRepaymentSchedule,
 } = require('../../../controllers/admin/loans/RepaymentScheduleController');
+const { generateReport } = require('../../../controllers/admin/loans/reports/reportsController');
 const { verifyToken, adminCheck } = require("../../../helpers/token");
 
 /******* Private Routes ********/
@@ -40,11 +42,13 @@ router.get('/repayment/schedule', verifyToken, adminCheck, getRepaymentSchedule)
 router.get('/repayment/history', verifyToken, adminCheck, getRepaymentHistory);
 router.get('/repayment/history/approve', verifyToken, adminCheck, getRepaymentHistoryToApprove);
 router.post('/repayment/history/approve', verifyToken, adminCheck, approveRepaymentHistory);
+router.post('/repayment/history/reject', verifyToken, adminCheck, rejectRepaymentHistory);
 
 //Penalty Routes
 router.post('/apply/planalty', verifyToken, adminCheck, applyPenaltyToALoanInstallment);
 router.post('/remove/planalty', verifyToken, adminCheck, removePenaltyFromALoanInstallment);
 
-
+//Report
+router.get('/report', verifyToken, adminCheck, generateReport);
 
 module.exports = router;

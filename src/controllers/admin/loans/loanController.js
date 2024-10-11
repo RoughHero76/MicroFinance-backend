@@ -677,7 +677,170 @@ exports.approveRepaymentHistory = async (req, res) => {
     }
 }
 
+/* Rejecting repayments */
+exports.rejectRepaymentHistory = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
+    try {
+        const { repaymentId } = req.body;
+
+        if (!repaymentId) {
+            throw new Error('Repayment ID is required');
+        }
+
+        console.log('Reject repayment history request body:', req.body);
+
+        // Find the repayment
+        const repayment = await Repayment.findById(repaymentId).session(session);
+        if (!repayment) {
+            throw new Error('Repayment not found');
+        }
+
+        console.log('Found repayment:', repayment);
+
+        if (repayment.status !== 'Pending') {
+            throw new Error('Only pending repayments can be rejected');
+        }
+
+        // Check if logicNote is valid
+        if (repayment.logicNote && repayment.logicNote.trim() !== '') {
+            // Existing logic for processing logicNote
+            const logicNoteDetails = repayment.logicNote.split(' | ');
+            console.log('Logic notes:', logicNoteDetails);
+
+            for (const detail of logicNoteDetails) {
+                const match = detail.match(/Schedule (\w+):\s*(.*)/);
+                if (!match) {
+                    console.warn(`Skipping invalid logic note detail: ${detail}`);
+                    continue;
+                }
+                const [, scheduleId, action] = match;
+                await processSchedule(scheduleId, action, session, repayment);
+            }
+        } else {
+            // New logic for handling missing or invalid logicNote
+            console.log('LogicNote is missing or invalid. Using fallback logic.');
+            const affectedSchedules = await RepaymentSchedule.find({ repayments: repaymentId }).session(session);
+
+            for (const schedule of affectedSchedules) {
+                await processFallbackSchedule(schedule, repayment, session);
+            }
+        }
+
+        // Update loan
+        const loan = await Loan.findById(repayment.loan).session(session);
+        console.log('Found loan:', loan);
+        loan.totalPaid -= repayment.amount;
+        loan.outstandingAmount += repayment.amount;
+        await loan.save({ session });
+
+        console.log('Updated loan:', loan);
+
+        // Update employee
+        if (repayment.collectedBy) {
+            const employee = await Employee.findById(repayment.collectedBy).session(session);
+            console.log('Found employee:', employee);
+            employee.collectedRepayments = employee.collectedRepayments.filter(id => !id.equals(repayment._id));
+            await employee.save({ session });
+
+            console.log('Updated employee:', employee);
+        }
+
+        // Update repayment status
+        repayment.status = 'Rejected';
+        await repayment.save({ session });
+
+        console.log('Updated repayment:', repayment);
+
+        await session.commitTransaction();
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Repayment rejected successfully',
+            data: {
+                repaymentId: repayment._id,
+                loanId: loan._id,
+                amountReverted: repayment.amount
+            }
+        });
+    } catch (error) {
+        await session.abortTransaction();
+        console.error('Repayment rejection error:', error);
+        res.status(400).json({ status: 'error', message: error.message });
+    } finally {
+        session.endSession();
+    }
+};
+
+async function processSchedule(scheduleId, action, session, repayment) {
+    const schedule = await RepaymentSchedule.findById(scheduleId).session(session);
+    if (!schedule) {
+        console.warn(`Schedule ${scheduleId} not found, skipping`);
+        return;
+    }
+
+    console.log('Found schedule:', schedule);
+
+    // Remove this repayment from the schedule's repayments array
+    schedule.repayments = schedule.repayments.filter(id => !id.equals(repayment._id));
+
+    // Revert the schedule status based on the action
+    if (action.includes('Full payment')) {
+        schedule.status = 'Pending';
+        schedule.amount = schedule.originalAmount || schedule.amount;
+    } else if (action.includes('Partial payment')) {
+        if (schedule.status === 'PartiallyPaid') {
+            const amountMatch = action.match(/(\d+(\.\d+)?)/);
+            if (amountMatch) {
+                schedule.amount -= parseFloat(amountMatch[1]);
+            }
+        } else {
+            schedule.status = 'Pending';
+            schedule.amount = (schedule.originalAmount || schedule.amount) / 2;
+        }
+    } else if (action.includes('Overdue paid')) {
+        schedule.status = 'Overdue';
+    } else if (action.includes('Partially paid amount now fully paid')) {
+        schedule.status = 'PartiallyPaid';
+        schedule.amount = (schedule.originalAmount || schedule.amount) / 2;
+    } else if (action.includes('Advance paid')) {
+        schedule.status = 'Pending';
+    }
+
+    console.log(`Reverted schedule ${scheduleId} status to ${schedule.status}`);
+
+    schedule.paymentDate = null;
+    schedule.collectedBy = null;
+
+    await schedule.save({ session });
+}
+
+async function processFallbackSchedule(schedule, repayment, session) {
+    console.log('Processing fallback for schedule:', schedule._id);
+
+    // Remove this repayment from the schedule's repayments array
+    schedule.repayments = schedule.repayments.filter(id => !id.equals(repayment._id));
+
+    if (schedule.penaltyApplied) {
+        if (schedule.status === 'PartiallyPaidFullyPaid') {
+            schedule.status = 'PartiallyPaid';
+            schedule.amount = (schedule.originalAmount || schedule.amount) / 2;
+        } else {
+            schedule.status = 'Overdue';
+        }
+    } else {
+        schedule.status = 'Pending';
+    }
+
+    console.log(`Fallback: Set schedule ${schedule._id} status to ${schedule.status}`);
+
+    schedule.paymentDate = null;
+    schedule.collectedBy = null;
+
+    await schedule.save({ session });
+}
+/* Rejecting repayments ends*/
 
 exports.assignLoanToEmployee = async (req, res) => {
     try {
@@ -913,9 +1076,10 @@ exports.closeLoan = async (req, res) => {
             throw new Error('Loan not found');
         }
 
-        // Check if totalRemainingAmountCustomerIsPaying is greater than outstandingAmount
-        if (totalRemainingAmountCustomerIsPaying > loan.outstandingAmount) {
-            throw new Error('Payment amount exceeds outstanding amount');
+        // Check if totalRemainingAmountCustomerIsPaying is greater than outstandingAmount + totalPenaltyAmount
+        const totalDue = loan.outstandingAmount + loan.totalPenaltyAmount;
+        if (totalRemainingAmountCustomerIsPaying > totalDue) {
+            throw new Error('Payment amount exceeds total due amount');
         }
 
         const originalPaymentAmount = totalRemainingAmountCustomerIsPaying;
@@ -953,6 +1117,7 @@ exports.closeLoan = async (req, res) => {
             if (remainingAmount >= penalty.amount) {
                 penalty.status = 'Paid';
                 remainingAmount -= penalty.amount;
+                loan.totalPenaltyAmount -= penalty.amount; // Reduce totalPenaltyAmount as penalty is paid
             } else {
                 penalty.status = 'Waived';
             }
@@ -962,7 +1127,13 @@ exports.closeLoan = async (req, res) => {
         // Update loan status and payments
         loan.status = 'Closed';
         loan.totalPaid += originalPaymentAmount;
-        loan.outstandingAmount -= originalPaymentAmount;
+
+        // Adjust outstandingAmount and totalPenaltyAmount
+        const paidTowardsPrincipal = Math.min(loan.outstandingAmount, originalPaymentAmount);
+        loan.outstandingAmount -= paidTowardsPrincipal;
+        const paidTowardsPenalties = originalPaymentAmount - paidTowardsPrincipal;
+        loan.totalPenaltyAmount = Math.max(0, loan.totalPenaltyAmount - paidTowardsPenalties);
+
         loan.loanClosedDate = new Date();
 
         // Create a repayment for the amount paid

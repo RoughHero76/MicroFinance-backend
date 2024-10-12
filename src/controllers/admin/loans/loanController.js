@@ -557,14 +557,14 @@ exports.getTotalMarketDetails = async (req, res) => {
 
 exports.getRepaymentHistoryToApprove = async (req, res) => {
     try {
-        const { loanId, defaultDate, date, status, page = 1, limit = 10 } = req.query;
+        const { loanNumber, defaultDate, date, status, page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
         console.log('getRepaymentHistoryToApprove req.query:', req.query);
 
         let query = {};
 
-        if (loanId) {
-            query.loan = loanId;
+        if (loanNumber) {
+            query.loan = loanNumber;
         }
 
 

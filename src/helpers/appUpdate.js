@@ -224,6 +224,10 @@ exports.downloadApk = async (req, res) => {
     const repo = 'MicroFinance';
     const githubToken = process.env.GITHUB_ACCESS_TOKEN;
     const cacheDir = path.join(__dirname, 'apk_cache');
+    const ONE_HOUR_IN_MS = 60 * 60 * 1000; // 1 hour in milliseconds
+
+    const forceDownload = req.query.forceDownload === 'true';
+    const deleteCache = req.query.deleteCache === 'true';
 
     console.log('Processing APK download request...');
 
@@ -243,7 +247,6 @@ exports.downloadApk = async (req, res) => {
         apiClient.defaults.headers.common['Authorization'] = `token ${githubToken}`;
         downloadClient.defaults.headers.common['Authorization'] = `token ${githubToken}`;
 
-        // Fetch the latest release
         const releasesApiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
         console.log(`Fetching releases from ${releasesApiUrl}`);
         const releasesResponse = await apiClient.get(releasesApiUrl);
@@ -270,24 +273,49 @@ exports.downloadApk = async (req, res) => {
 
         const apkPath = path.join(cacheDir, apkAsset.name);
         let apkExists = false;
+        let shouldDownloadNewApk = forceDownload; // Force download if the flag is true
 
         try {
-            await fs.access(apkPath);
-            apkExists = true;
+            const stats = await fs.stat(apkPath);
+            const fileAge = Date.now() - new Date(stats.mtime).getTime();
+
+            // Check if the cached APK is older than 1 hour
+            if (!forceDownload && fileAge <= ONE_HOUR_IN_MS) {
+                apkExists = true;
+            } else if (!forceDownload) {
+                console.log('Cached APK is older than 1 hour, deleting it');
+                await fs.unlink(apkPath); // Delete the old APK
+                shouldDownloadNewApk = true;
+            }
         } catch (error) {
             // File doesn't exist, we'll download it
+            shouldDownloadNewApk = true;
         }
 
-        if (!apkExists) {
-            if (cacheDir) {
-                fsEmpty.emptyDir()
-                    .then(() => {
-                        console.log('success!')
-                    })
-                    .catch(err => {
-                        console.error(err)
-                    })
+        // Handle deleteCache flag
+        if (deleteCache) {
+            try {
+                await fs.unlink(apkPath);
+                console.log('Cached APK deleted successfully');
+                return res.status(200).json({
+                    status: 'success',
+                    message: 'Cached APK deleted successfully'
+                });
+            } catch (error) {
+                console.error('Error deleting cached APK:', error);
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'No cached APK found to delete'
+                });
             }
+        }
+
+        if (!apkExists || shouldDownloadNewApk) {
+            if (cacheDir) {
+                await fsEmpty.emptyDir(cacheDir);
+                console.log('Cache directory cleared successfully!');
+            }
+
             console.log(`Downloading APK from ${apkAsset.url}`);
             const apkResponse = await downloadClient.get(apkAsset.url, {
                 headers: {
@@ -359,3 +387,4 @@ exports.downloadApk = async (req, res) => {
         }
     }
 };
+

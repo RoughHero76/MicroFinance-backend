@@ -55,6 +55,32 @@
             transform: scale(0.95);
         }
 
+        #loadingSpinner {
+            display: none;
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #00c853;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        #message {
+            margin-top: 20px;
+            font-size: 1.1rem;
+        }
+
         footer {
             position: absolute;
             bottom: 20px;
@@ -80,6 +106,8 @@
     <div class="container">
         <h1>Download MicroFinance APK</h1>
         <button id="downloadBtn">Download Latest APK</button>
+        <div id="loadingSpinner"></div>
+        <div id="message"></div>
     </div>
 
     <footer>
@@ -88,12 +116,51 @@
 
     <script>
         document.getElementById('downloadBtn').addEventListener('click', () => {
-            const link = document.createElement('a');
-            link.href = 'https://microfinanace-g4fba3bye5cdggee.centralindia-01.azurewebsites.net/api/shared/app/update/download'; // Replace with your backend route
-            link.setAttribute('download', ''); // Backend sets the filename
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const downloadBtn = document.getElementById('downloadBtn');
+            const spinner = document.getElementById('loadingSpinner');
+            const message = document.getElementById('message');
+            const link = 'https://microfinanace-g4fba3bye5cdggee.centralindia-01.azurewebsites.net/api/shared/app/update/download'; // Replace with your backend route
+
+            // Clear any previous messages
+            message.innerText = '';
+            message.style.color = '';
+
+            // Show the loading spinner
+            spinner.style.display = 'block';
+            downloadBtn.disabled = true;
+
+            // Start the download process
+            fetch(link)
+                .then(response => {
+                    if (response.ok) {
+                        return response.blob();
+                    } else {
+                        throw new Error('Failed to download APK. Please try again later.');
+                    }
+                })
+                .then(blob => {
+                    const downloadLink = document.createElement('a');
+                    const url = window.URL.createObjectURL(blob);
+                    downloadLink.href = url;
+                    downloadLink.setAttribute('download', 'MicroFinance.apk'); // Set the filename
+                    document.body.appendChild(downloadLink);
+                    downloadLink.click();
+                    document.body.removeChild(downloadLink);
+
+                    // Success message
+                    message.innerText = 'Download successful!';
+                    message.style.color = '#00c853';
+                })
+                .catch(error => {
+                    // Error message
+                    message.innerText = error.message;
+                    message.style.color = 'red';
+                })
+                .finally(() => {
+                    // Hide the loading spinner and re-enable button
+                    spinner.style.display = 'none';
+                    downloadBtn.disabled = false;
+                });
         });
     </script>
 

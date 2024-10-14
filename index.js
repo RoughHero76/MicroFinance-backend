@@ -1,11 +1,13 @@
+//Index.js
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-
-//Crone
 const cron = require('node-cron');
-const { pendingToOverdue } = require('./src/crone/RepaymentScheduleCrone');
+
+// Cron jobs
+const { pendingToOverdue } = require('./src/cron/RepaymentScheduleCron');
+const { updateLoanStatuses } = require('./src/cron/LoanStatusCron');
 
 
 const connectDB = require('./src/config/databaseConfig');
@@ -28,10 +30,13 @@ function startServer(retryCount = 0) {
 
 
     cron.schedule('0 23 * * *', async () => {
+      console.log('Starting cron jobs at 11 PM');
       await pendingToOverdue();
-      console.log('Cron job executed at 11 PM');
+      console.log('Pending to Overdue cron job completed');
+      await updateLoanStatuses();
+      console.log('Loan Status update cron job completed');
     });
-
+    
     app.use('/api', routes);
 
     app.use(express.static(path.join(__dirname, 'public')));

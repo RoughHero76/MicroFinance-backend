@@ -420,7 +420,7 @@ exports.getCustomers = async (req, res) => {
             .populate({
                 path: 'loans',
                 match: { assignedTo: employeeId }, // Filter loans assigned to this employee
-                select: 'loanAmount status loanStartDate loanEndDate outstandingAmount',
+                select: 'loanAmount status loanStartDate loanEndDate outstandingAmount businessFirmName businessAddress loanNumber', // Include the missing fields
             });
 
         if (!customers || customers.length === 0) {
@@ -433,6 +433,8 @@ exports.getCustomers = async (req, res) => {
                 customers[i].profilePic = await getSignedUrl(filePath);
             }
         }
+
+        console.log()
 
         // Filter customers who have loans assigned to the employee
         const filteredCustomers = customers
@@ -449,6 +451,9 @@ exports.getCustomers = async (req, res) => {
                 loans: customer.loans.map(loan => ({
                     loanAmount: loan.loanAmount,
                     status: loan.status,
+                    loanNumber: loan.loanNumber,
+                    businessFirmName: loan.businessFirmName,
+                    businessAddress: loan.businessAddress,
                     loanStartDate: loan.loanStartDate,
                     loanEndDate: loan.loanEndDate,
                     outstandingAmount: loan.outstandingAmount,
@@ -470,7 +475,7 @@ exports.getCustomerProfile = async (req, res) => {
 
         const customer = await Customer.findById(customerId).populate({
             path: 'loans',
-            select: 'loanAmount status loanStartDate loanEndDate outstandingAmount phoneNumber address city, profilePic',
+            select: 'loanAmount status loanStartDate loanEndDate outstandingAmount phoneNumber address city profilePic businessFirmName businessAddress loanNumber',
 
         });
 

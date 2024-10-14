@@ -182,6 +182,7 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                         loanAmount: '$loanDetails.loanAmount',
                         loanEndDate: '$loanDetails.loanEndDate',
                         totalOverdueAmount: '$totalOverdueAmount',
+                        loanNumber: '$loanDetails.loanNumber',
                         customer: {
                             _id: '$customerDetails._id',
                             fname: '$customerDetails.fname',

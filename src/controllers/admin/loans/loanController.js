@@ -207,8 +207,18 @@ exports.addDocumentsToLoan = [
                 return res.status(404).json({ status: 'error', message: 'Loan not found' });
             }
 
+            const customer = await Customer.findById(loan.customer).session(session);
+
+            if (!customer) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(404).json({ status: 'error', message: 'Customer not found' });
+            }
+
+            const customerUid = customer.uid;
+
             const uploadFileWithPath = async (file, documentName) => {
-                const path = `${loan.customer}/${loan._id}/${documentName}`;
+                const path = `${customerUid}/${loan._id}/${documentName}`;
                 return await uploadFile(file, path);
             };
 

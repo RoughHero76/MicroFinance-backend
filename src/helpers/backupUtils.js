@@ -10,25 +10,22 @@ const dumpCollection = async (collection, dumpPath) => {
     const writeStream = await fsp.open(collectionPath, 'w');
 
     // Write the opening array bracket for JSON
-    await writeStream.write('[');
+    await writeStream.write('[\n');
 
-    let first = true; // Track if this is the first document to handle commas
+    let first = true;
+    const cursor = collection.find({}).batchSize(100);
 
-    // Use a cursor to fetch documents in batches
-    const cursor = collection.find({}).batchSize(100); // Adjust batchSize as needed
-
-    await cursor.forEach(async (doc) => {
+    for await (const doc of cursor) {
         if (!first) {
-            await writeStream.write(',\n'); // Add a comma before each document except the first
+            await writeStream.write(',\n');
         }
-        await writeStream.write(JSON.stringify(doc, null, 2));
-        first = false; // Now subsequent documents should add a comma
-    });
+        await writeStream.write('  ' + JSON.stringify(doc));
+        first = false;
+    }
 
     // Write the closing array bracket for JSON
-    await writeStream.write(']');
+    await writeStream.write('\n]\n');
 
-    // Close the write stream
     await writeStream.close();
 };
 

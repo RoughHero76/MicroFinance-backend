@@ -2,7 +2,12 @@
 
 const mongoose = require('mongoose');
 const Customer = require('../../models/Customers/profile/CustomerModel');
-const { getSignedUrl, extractFilePath, uploadFile } = require('../../config/firebaseStorage');
+const Loan = require('../../models/Customers/Loans/LoanModel');
+const Penalty = require('../../models/Customers/Loans/Repayment/PenaltyModel');
+const Repayment = require('../../models/Customers/Loans/Repayment/Repayments');
+const RepaymentSchedule = require('../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
+const Employee = require('../../models/Employee/EmployeeModel');
+const { getSignedUrl, extractFilePath, uploadFile, deleteDocuments } = require('../../config/firebaseStorage');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -121,23 +126,73 @@ exports.getCustomers = async (req, res) => {
 
 
 exports.deleteCustomer = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
     try {
         const { uid } = req.query;
         if (!uid) {
             return res.status(400).json({ status: 'error', message: 'uid is required' });
         }
-        const customer = await Customer.findOne({ uid });
+
+        const customer = await Customer.findOne({ uid }).populate('loans');
         if (!customer) {
             return res.status(404).json({ status: 'error', message: 'Customer not found' });
         }
-        await Customer.deleteOne({ uid });
-        res.json({ status: 'success', message: 'Customer deleted successfully' });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ status: 'error', message: 'Internal server error' });
-    }
-}
 
+        // Check for active loans
+        const activeLoans = customer.loans.filter(loan => loan.status === 'Active');
+        if (activeLoans.length > 0) {
+            return res.status(400).json({ status: 'error', message: 'Customer has active loans and cannot be deleted' });
+        }
+
+        // Process each loan
+        for (const loan of customer.loans) {
+            // Delete documents from Firebase Storage and the database
+            await deleteDocuments(loan._id);
+
+            // Delete Repayment Schedule
+            await RepaymentSchedule.deleteMany({ loan: loan._id }, { session });
+
+            // Remove Repayment Collection from Employee
+            const repayments = await Repayment.find({ loan: loan._id });
+            const employee = await Employee.findById(loan.assignedTo);
+
+            if (employee) {
+                const repaymentIds = repayments.map(r => r._id.toString());
+                employee.collectedRepayments = employee.collectedRepayments.filter(r => !repaymentIds.includes(r.toString()));
+                await employee.save({ session });
+            }
+
+            // Delete Repayments 
+            await Repayment.deleteMany({ loan: loan._id }, { session });
+
+            // Delete Penalties
+            await Penalty.deleteMany({ loan: loan._id }, { session });
+
+            // Delete the loan
+            await Loan.findByIdAndDelete(loan._id, { session });
+        }
+
+        // Delete customer's profile picture if it exists
+        if (customer.profilePic) {
+            const filePath = extractFilePath(customer.profilePic);
+            await bucket.file(filePath).delete();
+        }
+
+        // Delete the customer
+        await Customer.findByIdAndDelete(customer._id, { session });
+
+        await session.commitTransaction();
+        res.json({ status: 'success', message: 'Customer and associated data deleted successfully' });
+    } catch (error) {
+        await session.abortTransaction();
+        console.error(error);
+        res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
+    } finally {
+        session.endSession();
+    }
+};
 exports.updateCustomer = async (req, res) => {
     try {
         const { uid } = req.query;
@@ -152,17 +207,41 @@ exports.updateCustomer = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Customer not found' });
         }
 
-        customer.fname = fname || customer.fname;
-        customer.lname = lname || customer.lname;
-        customer.gender = gender || customer.gender;
-        customer.email = email || customer.email;
-        customer.userName = userName || customer.userName;
-        customer.phoneNumber = phoneNumber || customer.phoneNumber;
-        customer.address = address || customer.address;
-        customer.city = city || customer.city;
-        customer.state = state || customer.state;
-        customer.country = country || customer.country;
-        customer.pincode = pincode || customer.pincode;
+        if (fname) {
+            customer.fname = fname;
+        }
+        if (lname) {
+            customer.lname = lname;
+        }
+        if (gender) {
+            customer.gender = gender;
+        }
+        if (email) {
+            customer.email = email;
+        }
+        if (userName) {
+            customer.userName = userName;
+        }
+        if (phoneNumber) {
+            customer.phoneNumber = phoneNumber;
+        }
+        if (address) {
+            customer.address = address;
+        }
+        if (city) {
+            customer.city = city;
+        }
+        if (state) {
+            customer.state = state;
+        }
+        if (country) {
+            customer.country = country;
+        }
+        if (pincode) {
+            customer.pincode = pincode;
+        }
+
+
         await customer.save();
 
         res.json({ status: 'success', message: 'Customer updated successfully' });

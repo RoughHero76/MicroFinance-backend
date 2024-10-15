@@ -17,7 +17,9 @@ const {
   assignLoanToEmployee,
   applyPenaltyToALoanInstallment,
   removePenaltyFromALoanInstallment,
-  closeLoan
+  closeLoan,
+  addDocumentsToLoan,
+  deleteDocumentsFromLoan
 } = require('../../../controllers/admin/loans/loanController');
 const {
   getRepaymentSchedule,
@@ -47,6 +49,10 @@ router.post('/repayment/history/reject', verifyToken, adminCheck, rejectRepaymen
 //Penalty Routes
 router.post('/apply/planalty', verifyToken, adminCheck, applyPenaltyToALoanInstallment);
 router.post('/remove/planalty', verifyToken, adminCheck, removePenaltyFromALoanInstallment);
+
+//Documents Routes
+router.post('/:loanId/add/documents', verifyToken, adminCheck, addDocumentsToLoan);
+router.delete('/:loanId/delete/documents', verifyToken, adminCheck, deleteDocumentsFromLoan);
 
 //Report
 router.get('/report', verifyToken, adminCheck, generateReport);

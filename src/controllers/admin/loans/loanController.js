@@ -1,5 +1,4 @@
 const mongoose = require('mongoose');
-const { getStorage } = require('firebase-admin/storage');
 const Loan = require('../../../models/Customers/Loans/LoanModel');
 const Repayment = require('../../../models/Customers/Loans/Repayment/Repayments');
 const RepaymentSchedule = require('../../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
@@ -8,7 +7,7 @@ const Employee = require('../../../models/Employee/EmployeeModel');
 const Penalty = require('../../../models/Customers/Loans/Repayment/PenaltyModel');
 const Customer = require('../../../models/Customers/profile/CustomerModel');
 const { generateRepaymentSchedule } = require('../../../helpers/loan');
-const { getSignedUrl, extractFilePath, uploadFile, deleteDocuments } = require('../../../config/firebaseStorage');
+const { getSignedUrl, extractFilePath, uploadFile, deleteDocuments, deleteDocumentsUrls } = require('../../../config/firebaseStorage');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -52,13 +51,23 @@ exports.createLoan = [
                 parsedDocuments
             });
 
-            // Validation checks (keep existing validation logic)
+            // Validation checks 
+
+            if (!customerUid || !loanAmount || !principalAmount || !loanDuration || !installmentFrequency || !interestRate || !loanStartDate) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'Missing required loan parameters' });
+            }
+
+            if (!parsedDocuments || parsedDocuments.length === 0) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'Missing required documents' });
+            }
 
             const customer = await Customer.findOne({ uid: customerUid }).session(session);
-            console.log('Customer found:', customer);
 
             if (!customer) {
-                console.log('Customer not found with UID:', customerUid);
                 await session.abortTransaction();
                 session.endSession();
                 return res.status(404).json({ status: 'error', message: 'Customer not found' });
@@ -159,6 +168,146 @@ exports.createLoan = [
     }
 ];
 
+
+//Delete Document or Update Document (Upload a new one to exisitng loan)
+
+exports.addDocumentsToLoan = [
+    upload.array('documents'),
+    async (req, res) => {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const { loanId } = req.params;
+            const { documentNames, documentTypes } = req.body;
+
+            if (!loanId) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'Missing required loan id' });
+            }
+
+            if (!req.files || req.files.length === 0) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'No documents provided' });
+            }
+
+            if (!documentNames || !documentTypes || documentNames.length !== documentTypes.length) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'Invalid document information provided' });
+            }
+
+            const loan = await Loan.findById(loanId).session(session);
+
+            if (!loan) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(404).json({ status: 'error', message: 'Loan not found' });
+            }
+
+            const uploadFileWithPath = async (file, documentName) => {
+                const path = `${loan.customer}/${loan._id}/${documentName}`;
+                return await uploadFile(file, path);
+            };
+
+            for (let i = 0; i < req.files.length; i++) {
+                const file = req.files[i];
+                const documentUrl = await uploadFileWithPath(file, documentNames[i]);
+                const newDocument = new Document({
+                    loan: loan._id,
+                    documentName: documentNames[i],
+                    documentUrl: documentUrl,
+                    documentType: documentTypes[i]
+                });
+                await newDocument.save({ session });
+                loan.documents.push(newDocument._id);
+            }
+
+            await loan.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
+            res.status(200).json({ status: 'success', message: 'Documents added successfully', loan });
+        } catch (error) {
+            console.error(error);
+            await session.abortTransaction();
+            session.endSession();
+            res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
+        }
+    }
+];
+exports.deleteDocumentsFromLoan = async (req, res) => {
+    const maxRetries = 3;
+    let retries = 0;
+
+    while (retries < maxRetries) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            const { loanId } = req.params;
+            const { documentIds } = req.body;
+
+            if (!documentIds || documentIds.length === 0) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'No document IDs provided' });
+            }
+
+            const loan = await Loan.findById(loanId).session(session);
+
+            if (!loan) {
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(404).json({ status: 'error', message: 'Loan not found' });
+            }
+
+            const documentsToDelete = await Document.find({
+                _id: { $in: documentIds },
+                loan: loanId
+            }).session(session);
+
+            if (documentsToDelete.length !== documentIds.length) {
+                console.log(`Documents to delete: ${documentsToDelete}` + `Document IDs: ${documentIds}`);
+                await session.abortTransaction();
+                session.endSession();
+                return res.status(400).json({ status: 'error', message: 'One or more document IDs are invalid or do not belong to this loan' });
+            }
+
+            const documentUrls = documentsToDelete.map(doc => doc.documentUrl);
+
+            // Delete documents from storage
+            await deleteDocumentsUrls(documentUrls);
+
+            // Remove document references from the loan
+            loan.documents = loan.documents.filter(docId => !documentIds.includes(docId.toString()));
+            await loan.save({ session });
+
+            // Delete document records from the database
+            await Document.deleteMany({ _id: { $in: documentIds } }).session(session);
+
+            await session.commitTransaction();
+            session.endSession();
+
+            return res.status(200).json({ status: 'success', message: 'Documents deleted successfully', loan });
+        } catch (error) {
+            console.error(error);
+            await session.abortTransaction();
+            session.endSession();
+
+            if (error.errorLabels && error.errorLabels.includes('TransientTransactionError') && retries < maxRetries - 1) {
+                console.log(`Retrying transaction (attempt ${retries + 2} of ${maxRetries})...`);
+                retries++;
+                continue;
+            }
+
+            return res.status(500).json({ status: 'error', message: 'Internal server error', details: error.message });
+        }
+    }
+};
 
 exports.deleteLoan = async (req, res) => {
     const session = await mongoose.startSession();
@@ -371,7 +520,6 @@ exports.deleteDocuments = async (req, res) => {
     try {
         const { loanId } = req.params;
         const { documentIds } = req.body;
-
         const result = await deleteDocuments(loanId, documentIds);
         res.json({ status: 'success', ...result });
     } catch (error) {

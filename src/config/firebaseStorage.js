@@ -104,4 +104,21 @@ async function deleteDocuments(loanId) {
   }
 }
 
-module.exports = { uploadFile, getSignedUrl, extractFilePath, deleteDocuments };
+async function deleteDocumentsUrls(documentUrls) {
+  const deletionPromises = documentUrls.map(async (url) => {
+    try {
+      const filePath = extractFilePath(url);
+      await bucket.file(filePath).delete();
+      console.log(`Successfully deleted file from Firebase Storage: ${filePath}`);
+    } catch (error) {
+      console.error(`Error deleting file from Firebase Storage: ${error.message}`);
+      // Continue with the deletion process even if a file is not found in Firebase Storage
+    }
+  });
+
+  await Promise.all(deletionPromises);
+
+  return { message: 'Documents deleted successfully from Firebase Storage' };
+}
+
+module.exports = { uploadFile, getSignedUrl, extractFilePath, deleteDocuments, deleteDocumentsUrls };

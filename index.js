@@ -6,9 +6,8 @@ const dotenv = require('dotenv');
 const cron = require('node-cron');
 
 // Cron jobs
-const { pendingToOverdue } = require('./src/cron/RepaymentScheduleCron');
-const { updateLoanStatuses } = require('./src/cron/LoanStatusCron');
-
+const { pendingToOverdue } = require('./src/crone/RepaymentScheduleCron');
+const { updateLoanStatuses } = require('./src/crone/LoanStatusCron');
 
 const connectDB = require('./src/config/databaseConfig');
 const routes = require('./src');

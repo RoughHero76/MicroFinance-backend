@@ -1,0 +1,4 @@
+//Db Restore cmd
+
+
+mongorestore --uri="mongodb://localhost:27017" --db=microfinance "C:\Users\mfais\downloads\microfinance"

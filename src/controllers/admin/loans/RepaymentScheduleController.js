@@ -90,17 +90,6 @@ exports.getRepaymentSchedule = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
-/*
-
-
-All of this good and all but what I don't understand
-where are required fields we are getting for advance logic? 
-for example, in advance logic we may require fields from user, 
-where are those fields?  From the body we are only getting  
-const { id, status, paymentDate, amount, advanceLogic } = req.body;  
-if it required for other fields can you modify that we can get those fields
- 
-*/
 
 exports.updateRepaymentSchedule = async (req, res) => {
     try {
@@ -118,6 +107,7 @@ exports.updateRepaymentSchedule = async (req, res) => {
             collectedBy
         } = req.body;
 
+        console.log('Collectedby in body: ', collectedBy)
         if (!id) {
             return res.status(400).json({ message: "RepaymentSchedule ID is required" });
         }
@@ -212,14 +202,14 @@ async function handleAdvancedLogic(repaymentSchedule, oldStatus, newStatus, data
 async function handlePendingToOthers(repaymentSchedule, newStatus, data, loan) {
     switch (newStatus) {
         case "Paid":
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             break;
         case "PartiallyPaid":
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date, amount, and method are required for Paid or PartiallyPaid status");
             }
             console.log('Pending To PartiallyPaid');
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             await createPenalty(repaymentSchedule, loan, data.penaltyAmount, data.penaltyReason, data.penaltyAppliedDate);
             break;
         case "Overdue":
@@ -229,10 +219,10 @@ async function handlePendingToOthers(repaymentSchedule, newStatus, data, loan) {
             if (!data.paymentDate || !data.amount || !data.paymentMethod) {
                 throw new Error("Payment date, amount, and method are required for AdvancePaid status");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             break;
         case "OverduePaid":
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             await createPenaltyIfNotExists(repaymentSchedule, loan, data.penaltyAmount, data.penaltyReason, data.penaltyAppliedDate);
             break;
         case "Waived":
@@ -315,7 +305,7 @@ async function handleOverdueToOthers(repaymentSchedule, newStatus, data, loan) {
             }
             console.log('Overdue To Paid: Loan is', loan);
             await removePenalty(repaymentSchedule);
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             break;
         case "PartiallyPaid":
             if (!data.paymentDate || !data.amount) {
@@ -335,7 +325,7 @@ async function handleOverdueToOthers(repaymentSchedule, newStatus, data, loan) {
             if (!data.paymentDate) {
                 throw new Error("Payment date is required");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, loan, data.paymentMethod, data.transactionId, data.collectedBy);
             break;
         case "Waived":
             await removePenalty(repaymentSchedule);
@@ -626,6 +616,7 @@ async function createRepayment(repaymentSchedule, paymentDate, amount, loan, pay
         // Update existing repayment
         const existingRepayment = await Repayment.findById(repaymentSchedule.repayments[0]);
         if (existingRepayment) {
+            console.log('Collected by: ', collectedBy);
             console.log("Repayment exists for this repayment schedule", existingRepayment);
             existingRepayment.amount = amount || existingRepayment.amount;
             existingRepayment.paymentDate = paymentDate || existingRepayment.paymentDate;
@@ -647,6 +638,8 @@ async function createRepayment(repaymentSchedule, paymentDate, amount, loan, pay
     paymentMethod = paymentMethod || "Cash";
     transactionId = transactionId || null;
     collectedBy = collectedBy || null;
+    console.log('Collected by: ', collectedBy);
+
 
     if (!loan || typeof loan.outstandingAmount !== 'number') {
         throw new Error("Invalid loan object or missing outstandingAmount");

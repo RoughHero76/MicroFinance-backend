@@ -398,6 +398,9 @@ exports.getLoans = async (req, res) => {
             includeRepaymentSchedule,
             includeRepaymentHistory,
             includeCustomerProfile,
+            includeAssignedTo,
+            includePenalty,
+            includeDocuments,
             limitedLoanDetails,
             page = 1,
             limit = 10,
@@ -445,10 +448,28 @@ exports.getLoans = async (req, res) => {
         }
 
         // Include documents
-        populateOptions.push({
-            path: 'documents',
-            select: 'uid documentName documentUrl documentType status'
-        });
+        if (includeDocuments === 'true') {
+            populateOptions.push({
+                path: 'documents',
+                select: 'uid documentName documentUrl documentType status'
+            });
+        }
+
+        // Include Details of assignedTo
+        if (includeAssignedTo === 'true') {
+            populateOptions.push({
+                path: 'assignedTo',
+                select: 'uid fname lname'
+            });
+        }
+
+        // Include Penaltys
+        if (includePenalty === 'true') {
+            populateOptions.push({
+                path: 'totalPenalty',
+                select: 'amount reason appliedDate'
+            });
+        }
 
         // Pagination
         const skip = (page - 1) * limit;

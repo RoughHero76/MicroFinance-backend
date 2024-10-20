@@ -78,6 +78,8 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
             }
         }
 
+
+
         const startOfDay = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
         const endOfDay = moment(date).tz('Asia/Kolkata').endOf('day').toDate();
 
@@ -187,13 +189,20 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                             _id: '$customerDetails._id',
                             fname: '$customerDetails.fname',
                             lname: '$customerDetails.lname',
-                            phoneNumber: '$customerDetails.phoneNumber'
+                            phoneNumber: '$customerDetails.phoneNumber',
+                            profilePic: '$customerDetails.profilePic'
                         }
                     }
                 }
             }
-        ]);
+        ]).sort({ dueDate: 1, loanNumber: 1 });
 
+        await Promise.all(collections.map(async collection => {
+            if (collection.loan.customer.profilePic) {
+                const filePath = extractFilePath(collection.loan.customer.profilePic);
+                collection.loan.customer.profilePic = await getSignedUrl(filePath);
+            }
+        }))
         res.status(200).json({ status: 'success', data: collections });
     } catch (error) {
         console.error('Collection error:', error);
@@ -412,55 +421,70 @@ exports.getCustomers = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
-        // Fetch customers whose loans are assigned to this employee
-        const customers = await Customer.find({})
+        // First, find all loans assigned to this employee
+        const assignedLoans = await Loan.find({ assignedTo: employeeId })
+            .select('customer')
+            .lean();
+
+        if (assignedLoans.length === 0) {
+            return res.status(200).json({
+                status: 'success',
+                message: 'No customers found',
+                data: [],
+                page: Number(page),
+                limit: Number(limit),
+                total: 0,
+                hasMore: false
+            });
+        }
+
+        // Extract customer IDs from the assigned loans
+        const customerIds = assignedLoans.map(loan => loan.customer);
+
+        // Count total customers
+        const totalCount = await Customer.countDocuments({
+            _id: { $in: customerIds }
+        });
+
+        // Fetch customers
+        const customers = await Customer.find({ _id: { $in: customerIds } })
             .skip(skip)
             .limit(Number(limit))
             .select('fname lname email phoneNumber address city profilePic')
             .populate({
                 path: 'loans',
-                match: { assignedTo: employeeId }, // Filter loans assigned to this employee
-                select: 'loanAmount status loanStartDate loanEndDate outstandingAmount businessFirmName businessAddress loanNumber', // Include the missing fields
-            });
+                match: { assignedTo: employeeId },
+                select: 'loanAmount status loanStartDate loanEndDate outstandingAmount businessFirmName businessAddress loanNumber'
+            })
+            .lean();
 
-        if (!customers || customers.length === 0) {
-            return res.status(200).json({ status: 'success', message: 'No customers found' });
-        }
-
-        for (let i = 0; i < customers.length; i++) {
-            if (customers[i].profilePic) {
-                const filePath = extractFilePath(customers[i].profilePic);
-                customers[i].profilePic = await getSignedUrl(filePath);
+        // Process profile pictures and filter out customers with no matching loans
+        const processedCustomers = await Promise.all(customers.map(async (customer) => {
+            if (customer.profilePic) {
+                const filePath = extractFilePath(customer.profilePic);
+                customer.profilePic = await getSignedUrl(filePath);
             }
-        }
+            // Only include customers who have loans assigned to the employee
+            if (customer.loans && customer.loans.length > 0) {
+                return customer;
+            }
+            return null;
+        }));
 
-        console.log()
+        // Remove null entries (customers with no matching loans)
+        const filteredCustomers = processedCustomers.filter(customer => customer !== null);
 
-        // Filter customers who have loans assigned to the employee
-        const filteredCustomers = customers
-            .filter(customer => customer.loans.length > 0) // Only customers with loans assigned to the employee
-            .map(customer => ({
-                _id: customer._id,
-                fname: customer.fname,
-                lname: customer.lname,
-                profilePic: customer.profilePic,
-                email: customer.email,
-                phoneNumber: customer.phoneNumber,
-                address: customer.address,
-                city: customer.city,
-                loans: customer.loans.map(loan => ({
-                    loanAmount: loan.loanAmount,
-                    status: loan.status,
-                    loanNumber: loan.loanNumber,
-                    businessFirmName: loan.businessFirmName,
-                    businessAddress: loan.businessAddress,
-                    loanStartDate: loan.loanStartDate,
-                    loanEndDate: loan.loanEndDate,
-                    outstandingAmount: loan.outstandingAmount,
-                }))
-            }));
+        // Prepare the response
+        const response = {
+            status: 'success',
+            data: filteredCustomers,
+            page: Number(page),
+            limit: Number(limit),
+            total: totalCount,
+            hasMore: skip + filteredCustomers.length < totalCount
+        };
 
-        res.status(200).json({ status: 'success', data: filteredCustomers });
+        res.status(200).json(response);
     } catch (error) {
         console.error('Customer fetch error:', error);
         res.status(500).json({ status: 'error', message: 'Error in getting customers' });

@@ -8,6 +8,7 @@ const cron = require('node-cron');
 // Cron jobs
 const { pendingToOverdue } = require('./src/crone/RepaymentScheduleCron');
 const { updateLoanStatuses } = require('./src/crone/LoanStatusCron');
+const { outstandingAmountChecks } = require('./src/scripts/OutstandingAmountChecks');
 
 const connectDB = require('./src/config/databaseConfig');
 const routes = require('./src');
@@ -35,7 +36,9 @@ function startServer(retryCount = 0) {
       await updateLoanStatuses();
       console.log('Loan Status update cron job completed');
     });
-    
+
+
+    //outstandingAmountChecks();
     app.use('/api', routes);
 
     app.use(express.static(path.join(__dirname, 'public')));

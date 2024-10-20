@@ -13,6 +13,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 exports.search = async (req, res) => {
     const { query, page = 1, limit = 10 } = req.body;
     const skip = (page - 1) * limit;
+    const id = req._id;
+    const role = req.role; // 'admin' or 'employee'
 
     try {
         let searchQuery = {};
@@ -32,7 +34,11 @@ exports.search = async (req, res) => {
 
         // If the query is intended to search loan numbers
         if (query) {
-            const loans = await Loan.find({ loanNumber: { $regex: query, $options: 'i' } });
+            const loanQuery = { loanNumber: { $regex: query, $options: 'i' } };
+            if (role === 'employee') {
+                loanQuery.assignedTo = id;
+            }
+            const loans = await Loan.find(loanQuery);
             customerIdsFromLoanSearch = loans.map(loan => loan.customer.toString());
         }
 
@@ -41,13 +47,34 @@ exports.search = async (req, res) => {
             searchQuery.$or.push({ _id: { $in: customerIdsFromLoanSearch } });
         }
 
+        // For employees, add an additional filter to only show assigned customers
+        if (role === 'employee') {
+            const assignedLoans = await Loan.find({ assignedTo: id }).select('customer');
+            const assignedCustomerIds = assignedLoans.map(loan => loan.customer.toString());
+            
+            if (searchQuery.$or) {
+                searchQuery = {
+                    $and: [
+                        { _id: { $in: assignedCustomerIds } },
+                        searchQuery
+                    ]
+                };
+            } else {
+                searchQuery._id = { $in: assignedCustomerIds };
+            }
+        }
+
         const customers = await Customer.find(searchQuery)
             .skip(skip)
             .limit(limit);
 
         const customerIds = customers.map(customer => customer._id);
 
-        const loans = await Loan.find({ customer: { $in: customerIds } });
+        const loanQuery = { customer: { $in: customerIds } };
+        if (role === 'employee') {
+            loanQuery.assignedTo = id;
+        }
+        const loans = await Loan.find(loanQuery);
 
         // Create a map of customer IDs to their loans
         const customerLoansMap = loans.reduce((map, loan) => {

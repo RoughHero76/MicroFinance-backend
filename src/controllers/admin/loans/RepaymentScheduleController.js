@@ -291,7 +291,7 @@ async function handlePartiallyPaidToOthers(repaymentSchedule, newStatus, data, l
             break;
         case "AdvancePaid":
             await removePenalty(repaymentSchedule);
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             break;
         case "OverduePaid":
             await updateRepaymentAmount(repaymentSchedule, data.amount, data.transactionId);;
@@ -321,14 +321,14 @@ async function handleOverdueToOthers(repaymentSchedule, newStatus, data, loan) {
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date and amount are required");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "AdvancePaid":
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date and amount are required");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await removePenalty(repaymentSchedule);
             break;
         case "OverduePaid":
@@ -352,13 +352,13 @@ async function handleAdvancePaidToOthers(repaymentSchedule, newStatus, data, loa
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date and amount are required");
             }
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             break;
         case "PartiallyPaid":
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date and amount are required");
             }
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "Overdue":
@@ -366,7 +366,7 @@ async function handleAdvancePaidToOthers(repaymentSchedule, newStatus, data, loa
             await createPenaltyIfNotExists(repaymentSchedule, loan);
 
         case "OverduePaid":
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "Waived":
@@ -397,7 +397,7 @@ async function handleOverduePaidToOthers(repaymentSchedule, newStatus, data, loa
             break;
         case "AdvancePaid":
             await removePenalty(repaymentSchedule);
-            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await updateRepaymentDateAndAmount(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             break;
         case "Waived":
             await removeRepayment(repaymentSchedule);
@@ -412,23 +412,23 @@ async function handleWaivedToOthers(repaymentSchedule, newStatus, data, loan) {
             // No action needed
             break;
         case "Paid":
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             break;
         case "PartiallyPaid":
             if (!data.paymentDate || !data.amount) {
                 throw new Error("Payment date and amount are required");
             }
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
         case "AdvancePaid":
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             break;
         case "Overdue":
             await createPenalty(repaymentSchedule, loan);
             break;
         case "OverduePaid":
-            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, loan);
+            await createRepayment(repaymentSchedule, data.paymentDate, data.amount, data.transactionId, data.collectedBy, loan);
             await createPenaltyIfNotExists(repaymentSchedule, loan);
             break;
     }

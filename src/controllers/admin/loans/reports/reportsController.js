@@ -2,6 +2,7 @@ const Loan = require('../../../../models/Customers/Loans/LoanModel');
 const Repayment = require('../../../../models/Customers/Loans/Repayment/Repayments');
 const RepaymentSchedule = require('../../../../models/Customers/Loans/Repayment/RepaymentScheduleModel');
 const Penalty = require('../../../../models/Customers/Loans/Repayment/PenaltyModel');
+const Employee = require('../../../../models/Employee/EmployeeModel');
 const Customer = require('../../../../models/Customers/profile/CustomerModel');
 const moment = require('moment-timezone');
 const PDFDocument = require('pdfkit');
@@ -19,7 +20,11 @@ async function fetchLoanData(startOfDay, endOfDay) {
             path: 'customer',
             model: Customer
         }
+    }).populate({
+        path: 'collectedBy',
+        model: Employee
     });
+
 
     const loanData = [];
 
@@ -38,9 +43,13 @@ async function fetchLoanData(startOfDay, endOfDay) {
             loanAmount: schedule.loan.loanAmount,
             installmentAmount: schedule.originalAmount,
             paidAmount: paidAmount || '',
-            penaltyAmount: penalty ? penalty.amount : ''
+            penaltyAmount: penalty ? penalty.amount : '',
+            collectedBy: `${schedule.collectedBy?.fname || ''}`,
         });
     }
+
+    //Sort loan data by loan number
+    loanData.sort((a, b) => a.loanNumber - b.loanNumber);
 
     return loanData;
 }
@@ -52,13 +61,14 @@ async function generateExcelReport(req, res, startOfDay, endOfDay) {
 
     // ** Define column widths and ensure proper number types for loanNumber and phoneNumber **
     worksheet.columns = [
-        { header: '', key: 'loanNumber', width: 15 },
-        { header: '', key: 'customerName', width: 30 },
-        { header: '', key: 'phoneNumber', width: 15 },
-        { header: '', key: 'loanAmount', width: 15 },
-        { header: '', key: 'installmentAmount', width: 15 },
-        { header: '', key: 'paidAmount', width: 15 },
-        { header: '', key: 'penaltyAmount', width: 15 }
+        { header: '', key: 'loanNumber', width: 7 },
+        { header: '', key: 'customerName', width: 24 },
+        { header: '', key: 'phoneNumber', width: 13 },
+        { header: '', key: 'loanAmount', width: 13 },
+        { header: '', key: 'installmentAmount', width: 11 },
+        { header: '', key: 'paidAmount', width: 7 },
+        //{ header: '', key: 'penaltyAmount', width: 7 }
+        { header: '', key: 'collectedBy', width: 9 }
     ];
 
     // ** Merge cells for the logo background (A1 to G4) **
@@ -92,7 +102,7 @@ async function generateExcelReport(req, res, startOfDay, endOfDay) {
     // ** Define headers manually after title (row 6) **
     const headerRowNumber = 6; // Headers start at row 6
     worksheet.getRow(headerRowNumber).values = [
-        'A/C No', 'Customer Name', 'Phone', 'Loan Amount', 'Ins Amount', 'Paid', 'Penalty'
+        'A/C No', 'Customer Name', 'Phone', 'Loan Amount', 'Ins Amount', 'Paid', /* 'Penalty' */ 'Employee',
     ];
 
     // Style the header row
@@ -123,7 +133,8 @@ async function generateExcelReport(req, res, startOfDay, endOfDay) {
         loanAmount: data.loanAmount,
         installmentAmount: data.installmentAmount,
         paidAmount: data.paidAmount,
-        penaltyAmount: data.penaltyAmount
+        //penaltyAmount: data.penaltyAmount
+        collectedBy: data.collectedBy
     }));
 
     worksheet.addRows(formattedData);
@@ -131,6 +142,21 @@ async function generateExcelReport(req, res, startOfDay, endOfDay) {
     // ** Calculate totals (based on data) **
     const totalPaid = formattedData.reduce((sum, data) => sum + (parseFloat(data.paidAmount) || 0), 0);
     const totalPenalty = formattedData.reduce((sum, data) => sum + (parseFloat(data.penaltyAmount) || 0), 0);
+
+    // ** Calculate total collected by each employee **
+    const totalCollectedByEmployee = formattedData.reduce((acc, data) => {
+        const employee = data.collectedBy;
+        if (employee) {
+            if (!acc[employee]) {
+                acc[employee] = 0;
+            }
+            acc[employee] += data.paidAmount; // Accumulate paidAmount for each employee
+        }
+        return acc;
+    }, {});
+
+    // ** Log or add totals to the worksheet **
+    console.log('Total collected by Each Employee:', totalCollectedByEmployee);
 
     // ** Add total row after the data **
     const totalRowNumber = formattedData.length + headerRowNumber + 1; // Dynamic row number for totals
@@ -150,6 +176,23 @@ async function generateExcelReport(req, res, startOfDay, endOfDay) {
                 };
             });
         }
+    });
+
+    // ** Add totals for each employee below the total row **
+    let employeeTotalRowNumber = totalRowNumber + 1; // Start employee totals 2 rows below the total row
+    //worksheet.getRow(employeeTotalRowNumber).values = ['Employee', 'Total Collected'];
+    worksheet.getRow(employeeTotalRowNumber).font = { bold: true }; // Bold font for the employee totals header
+    worksheet.getRow(employeeTotalRowNumber).alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(employeeTotalRowNumber).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' }, // Light grey background for employee totals header
+    };
+
+    // Add employee totals rows
+    Object.entries(totalCollectedByEmployee).forEach(([employee, total], index) => {
+        const rowNumber = employeeTotalRowNumber + index + 1;
+        worksheet.getRow(rowNumber).values = [employee, total];
     });
 
     // ** Prepare for export **

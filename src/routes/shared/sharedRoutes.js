@@ -13,12 +13,22 @@ const {
 
 const { appUpdateCheck, downloadApk } = require("../../helpers/appUpdate");
 
+//NPA
+
+const { 
+    getLoanStatus, 
+    getLoanStatusStatistics 
+} = require('../../controllers/admin/loanStatus/loanStatusController');
+
 
 
 router.post('/search', verifyToken, search);
 router.post('/loan/calculate', verifyToken, loanDetailsCalculator);
 router.post('/profile/add/porfilePicture', verifyToken, addProfilePictureAdminAndEmployee);
 
+//NPA
+router.get('/loan/status', verifyToken, getLoanStatus);
+router.get('/loan/status/statistics', verifyToken, getLoanStatusStatistics);
 
 //App Checks
 router.get('/app/update/check', verifyToken, appUpdateCheck);

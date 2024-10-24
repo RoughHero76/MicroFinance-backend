@@ -57,4 +57,6 @@ router.delete('/:loanId/delete/documents', verifyToken, adminCheck, deleteDocume
 //Report
 router.get('/report', verifyToken, adminCheck, generateReport);
 
+
+
 module.exports = router;

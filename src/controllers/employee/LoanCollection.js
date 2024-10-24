@@ -105,10 +105,10 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
                             status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
                         },
                         // Oldest pending schedule for loans past end date
-                        {
-                            'loanDetails.loanEndDate': { $lt: startOfDay },
-                            status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
-                        }
+                        //{
+                        //    'loanDetails.loanEndDate': { $lt: startOfDay },
+                        //    status: { $in: ['Pending', 'PartiallyPaid', 'Overdue'] }
+                        //}
                     ]
                 }
             },
@@ -207,6 +207,108 @@ exports.collectionsToBeCollectedToday = async (req, res) => {
     } catch (error) {
         console.error('Collection error:', error);
         res.status(500).json({ status: 'error', message: "Error getting today's collections" });
+    }
+};
+
+exports.payOldInstallment = async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const { loanId, repaymentScheduleId, amount, paymentMethod, transactionId } = req.body;
+        const collectedBy = req._id;
+
+        // 1. Validate loan exists
+        const loan = await Loan.findById(loanId).session(session);
+        if (!loan) {
+            throw new Error('Loan not found');
+        }
+
+        // 2. Get the specific schedule
+        const schedule = await RepaymentSchedule.findOne({
+            loan: loanId,
+            _id: repaymentScheduleId,
+            status: { $in: ['Overdue', 'PartiallyPaid'] }
+        }).session(session);
+
+        if (!schedule) {
+            throw new Error('Invalid repayment schedule,(Cannot pay a pending)');
+        }
+
+        const scheduleAmount = schedule.originalAmount || schedule.amount;
+
+        // 3. Validate payment amount
+        if (amount < scheduleAmount / 2) {
+            throw new Error('Payment must be at least half of the scheduled amount');
+        }
+
+        if (amount > scheduleAmount) {
+            throw new Error('Payment cannot exceed schedule amount');
+        }
+
+        // 4. Create repayment record
+        const newRepayment = new Repayment({
+            repaymentSchedule: [repaymentScheduleId],
+            amount: amount,
+            paymentMethod,
+            transactionId,
+            loan: loanId,
+            collectedBy,
+            logicNote: ''
+        });
+        await newRepayment.save({ session });
+
+        // 5. Update schedule status
+        const isFullPayment = amount >= scheduleAmount;
+        let newStatus;
+
+        if (schedule.status === 'Overdue') {
+            newStatus = isFullPayment ? 'OverduePaid' : 'PartiallyPaid';
+        } else {
+            newStatus = isFullPayment ? 'Paid' : 'PartiallyPaid';
+        }
+
+        schedule.status = newStatus;
+        schedule.amount = amount;
+        schedule.paymentDate = Date.now();
+        schedule.repayments.push(newRepayment._id);
+        schedule.collectedBy = collectedBy;
+        await schedule.save({ session });
+
+        // 6. Update loan
+        loan.totalPaid += amount;
+        loan.outstandingAmount -= amount;
+        await loan.save({ session });
+
+        // 7. Update employee
+        const employee = await Employee.findById(collectedBy).session(session);
+
+        if (!employee) {
+            res.status(404).json({ status: 'error', message: 'Only employees can process payments' });
+        }
+        employee.collectedRepayments.push(newRepayment._id);
+        await employee.save({ session });
+
+        // 8. Update repayment logic note
+        newRepayment.logicNote = `Schedule ${schedule._id}: ${isFullPayment ? 'Full' : 'Partial'} payment - ${amount}`;
+        await newRepayment.save({ session });
+
+        await session.commitTransaction();
+        session.endSession();
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Payment processed successfully',
+            data: {
+                repaymentDetails: newRepayment,
+                updatedSchedule: schedule
+            }
+        });
+    } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        console.error('Payment error:', error);
+        res.status(400).json({ status: 'error', message: error.message });
     }
 };
 

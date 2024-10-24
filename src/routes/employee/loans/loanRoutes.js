@@ -7,6 +7,7 @@ const { verifyToken } = require('../../../helpers/token');
 const {
     collectionsToBeCollectedToday,
     payACustomerInstallment,
+    payOldInstallment,
     getCustomerProfile,
     getLoanDetails,
     applyPenaltyToALoanInstallment,
@@ -19,6 +20,7 @@ const {
 router.get('/collection/today', verifyToken, collectionsToBeCollectedToday);
 router.get('/collection/today/count', verifyToken, collectionCountToday);
 router.post('/pay', verifyToken, payACustomerInstallment);
+router.post('/pay/old', verifyToken, payOldInstallment);
 router.get('/customer/profile', verifyToken, getCustomerProfile);
 router.get('/customers', verifyToken, getCustomers);
 router.get('/details', verifyToken, getLoanDetails);

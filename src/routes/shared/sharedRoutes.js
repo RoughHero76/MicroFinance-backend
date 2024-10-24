@@ -20,6 +20,9 @@ const {
     getLoanStatusStatistics 
 } = require('../../controllers/admin/loanStatus/loanStatusController');
 
+const { updateLoanStatusesReq } = require("../../crone/LoanStatusCron");
+
+
 
 
 router.post('/search', verifyToken, search);
@@ -29,6 +32,7 @@ router.post('/profile/add/porfilePicture', verifyToken, addProfilePictureAdminAn
 //NPA
 router.get('/loan/status', verifyToken, getLoanStatus);
 router.get('/loan/status/statistics', verifyToken, getLoanStatusStatistics);
+router.get('/loan/statuses/update', verifyToken, updateLoanStatusesReq);
 
 //App Checks
 router.get('/app/update/check', verifyToken, appUpdateCheck);

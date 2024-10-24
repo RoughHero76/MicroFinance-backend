@@ -97,8 +97,27 @@ exports.getLoanStatus = async (req, res) => {
 
 exports.getLoanStatusStatistics = async (req, res) => {
     try {
+        const { assignedTo } = req.query;
+        
+        // Build the initial match stage for filtering
+        let matchStage = {};
+        
+        // Handle assignedTo filter
+        if (assignedTo) {
+            // Get all loan IDs assigned to the specified user or current user
+            const assignedToId = assignedTo === 'me' ? req._id : assignedTo;
+            const assignedLoans = await Loan.find({ assignedTo: assignedToId }).select('_id');
+            const loanIds = assignedLoans.map(loan => loan._id);
+            
+            // Add loan filter to match stage
+            matchStage.loan = { $in: loanIds };
+        }
+
         const stats = await LoanStatus.aggregate([
-            // First stage: Group and calculate counts
+            // Add match stage at the beginning if there are filters
+            ...(Object.keys(matchStage).length > 0 ? [{ $match: matchStage }] : []),
+            
+            // Rest of the aggregation pipeline
             {
                 $facet: {
                     // Overall statistics
@@ -156,7 +175,7 @@ exports.getLoanStatusStatistics = async (req, res) => {
                     ]
                 }
             },
-            // Second stage: Format the response
+            // Format the response
             {
                 $project: {
                     statistics: {

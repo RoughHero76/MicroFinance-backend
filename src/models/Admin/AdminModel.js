@@ -60,6 +60,9 @@ const adminSchema = new mongoose.Schema({
         ref: "LoginHistory"
     },
 
+    fcmToken: {
+        type: String
+    }
 
 }, { timestamps: true });
 

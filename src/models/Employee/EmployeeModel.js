@@ -87,6 +87,9 @@ const employeeSchema = new mongoose.Schema({
     lastSeen: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "LastSeen"
+    },
+    fcmToken: {
+        type: String
     }
 
 }, { timestamps: true });

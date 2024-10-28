@@ -6,9 +6,14 @@ const loanStatusSchema = new mongoose.Schema({
         ref: 'Loan',
         required: true
     },
+    status: {
+        type: String,
+        enum: ['Active', 'Completed', 'Deleted'],
+        default: 'Active'
+    },
     smaLevel: {
         type: Number,
-        enum: [0, 1, 2],
+        enum: [0, 1, 2, null],  // null when loan is NPA
         default: 0
     },
     smaDate: {
@@ -45,6 +50,11 @@ const loanStatusSchema = new mongoose.Schema({
 loanStatusSchema.methods.updateStatus = function () {
     const duesCount = this.repaymentSchedules.length;
 
+    // Previous SMA level for history tracking
+    const previousSmaLevel = this.smaLevel;
+    const previousNpa = this.npa;
+
+    // Update SMA level and NPA status
     if (duesCount <= 5) {
         this.smaLevel = 0;
         this.npa = false;
@@ -55,15 +65,18 @@ loanStatusSchema.methods.updateStatus = function () {
         this.smaLevel = 2;
         this.npa = false;
     } else {
-        this.smaLevel = 2;
+        // If dues exceed 15, loan becomes NPA and SMA becomes null
+        this.smaLevel = null;
         this.npa = true;
     }
 
-    // Record SMA level change
-    this.smaHistory.push({ level: this.smaLevel, date: new Date() });
+    // Record SMA level change if changed and not NPA
+    if (previousSmaLevel !== this.smaLevel && this.smaLevel !== null) {
+        this.smaHistory.push({ level: this.smaLevel, date: new Date() });
+    }
 
     // Record NPA status change if it became NPA
-    if (this.npa && (this.npaHistory.length === 0 || !this.npaHistory[this.npaHistory.length - 1].npa)) {
+    if (!previousNpa && this.npa) {
         this.npaHistory.push({ date: new Date() });
     }
 };
@@ -75,5 +88,6 @@ loanStatusSchema.pre('save', function (next) {
     }
     next();
 });
+
 
 module.exports = mongoose.model('LoanStatus', loanStatusSchema);

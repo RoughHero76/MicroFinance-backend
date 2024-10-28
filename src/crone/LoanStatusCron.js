@@ -5,24 +5,30 @@ const RepaymentSchedule = require('../models/Customers/Loans/Repayment/Repayment
 
 const updateLoanStatuses = async () => {
     try {
-        const loans = await Loan.find({ status: 'Active' });
+        // Get all active loan statuses
+        const loanStatuses = await LoanStatus.find({ status: 'Active' });
 
-        for (const loan of loans) {
+        for (const loanStatus of loanStatuses) {
+            // Check if loan exists and is active
+            const loan = await Loan.findById(loanStatus.loan);
+            
+            if (!loan || loan.status !== 'Active') {
+                // Mark loan status as completed/deleted based on loan status
+                loanStatus.status = loan ? loan.status : 'Deleted';
+                await loanStatus.save();
+                continue;
+            }
+
+            // Get current overdue schedules
             const overdueSchedules = await RepaymentSchedule.find({
                 loan: loan._id,
                 status: 'Overdue'
             });
 
-            let loanStatus = await LoanStatus.findOne({ loan: loan._id });
-
-            if (!loanStatus) {
-                loanStatus = new LoanStatus({ loan: loan._id });
-            }
+            // Update loan status
             loanStatus.repaymentSchedules = overdueSchedules.map(schedule => schedule._id);
             loanStatus.totalOverdue = overdueSchedules.reduce((total, schedule) => total + schedule.amount, 0);
-            // This will trigger the updateStatus method defined in the LoanStatus model
             await loanStatus.save();
-
         }
 
         console.log('Loan status update completed');

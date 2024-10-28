@@ -75,7 +75,10 @@ const customerSchema = new mongoose.Schema({
     loans: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Loan'
-    }]
+    }],
+    fcmToken: {
+        type: String
+    }
 }, { timestamps: true });
 
 customerSchema.index({ fname: 'text', lname: 'text', email: 'text', phoneNumber: 'text', userName: 'text' });

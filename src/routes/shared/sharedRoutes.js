@@ -2,7 +2,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { verifyToken } = require("../../helpers/token");
+const { verifyToken, storeFcmToken } = require("../../helpers/token");
 
 const {
     search,
@@ -33,6 +33,9 @@ router.post('/profile/add/porfilePicture', verifyToken, addProfilePictureAdminAn
 router.get('/loan/status', verifyToken, getLoanStatus);
 router.get('/loan/status/statistics', verifyToken, getLoanStatusStatistics);
 router.get('/loan/statuses/update', verifyToken, updateLoanStatusesReq);
+
+//FCM Token
+router.post('/fcm/token', verifyToken, storeFcmToken);
 
 //App Checks
 router.get('/app/update/check', verifyToken, appUpdateCheck);

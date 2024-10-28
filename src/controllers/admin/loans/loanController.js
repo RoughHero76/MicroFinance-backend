@@ -8,7 +8,9 @@ const Penalty = require('../../../models/Customers/Loans/Repayment/PenaltyModel'
 const Customer = require('../../../models/Customers/profile/CustomerModel');
 const { generateRepaymentSchedule } = require('../../../helpers/loan');
 const { getSignedUrl, extractFilePath, uploadFile, deleteDocuments, deleteDocumentsUrls } = require('../../../config/firebaseStorage');
+const { updateLoanStatuses } = require('../../../crone/LoanStatusCron');
 const multer = require('multer');
+const LoanStatus = require('../../../models/Customers/Loans/loanStatusModel');
 const upload = multer({ storage: multer.memoryStorage() });
 
 exports.createLoan = [
@@ -376,8 +378,8 @@ exports.deleteLoan = async (req, res) => {
         // Delete the loan
         await Loan.findByIdAndDelete(loanId, { session });
 
-        // Delete Collected Collection History in Employee Collection
-        // (You may need to implement this part based on your specific requirements)
+        // Delete loan status
+        await LoanStatus.findByIdAndDelete({ loan: loanId }, { session });
 
         await session.commitTransaction();
         res.json({ status: 'success', message: 'Loan and associated documents deleted successfully' });

@@ -10,20 +10,28 @@ exports.getLoanStatus = async (req, res) => {
             smaLevel, npa, loanId, customerId, assignedTo,
             minOverdue, maxOverdue,
             page = 1, limit = 10, sortBy = 'smaDate', sortOrder = 'desc',
-            includeCustomer = 'false', 
-            includeRepaymentSchedule = 'false' 
+            includeCustomer = 'false',
+            includeRepaymentSchedule = 'false',
+            status = 'Active' // New parameter
         } = req.query;
 
-        const query = {};
+        const query = { status };
         const pageNumber = parseInt(page); // Convert to number
         const limitNumber = parseInt(limit); // Convert to number
 
         // Basic filters
-        if (smaLevel) query.smaLevel = smaLevel;
+        // if (smaLevel) query.smaLevel = smaLevel;
         if (npa) query.npa = npa === 'true';
         if (loanId) query.loan = loanId;
         if (minOverdue) query.totalOverdue = { $gte: parseFloat(minOverdue) };
         if (maxOverdue) query.totalOverdue = { ...query.totalOverdue, $lte: parseFloat(maxOverdue) };
+        if (smaLevel) {
+            if (smaLevel === 'null') {
+                query.smaLevel = null;
+            } else {
+                query.smaLevel = parseInt(smaLevel);
+            }
+        }
 
         // Handle assignedTo filter
         if (assignedTo === 'me') {

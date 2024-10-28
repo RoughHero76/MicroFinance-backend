@@ -1,6 +1,9 @@
 //src/helpers/token.js
 
 const jwt = require('jsonwebtoken');
+const Customer = require('../models/Customers/profile/CustomerModel');
+const Admin = require('../models/Admin/AdminModel');
+const Employee = require('../models/Employee/EmployeeModel');
 
 async function generateToken(user) {
     const token = jwt.sign
@@ -48,8 +51,8 @@ async function verifyToken(req, res, next) {
 
 async function adminCheck(req, res, next) {
 
-    if (req.role === 'admin') { 
-        next(); 
+    if (req.role === 'admin') {
+        next();
     } else {
         return res.status(403).json({ message: 'Unauthorized' }); // Send unauthorized response
     }
@@ -67,9 +70,48 @@ async function roleChecks(req, res, next) {
     }
 }
 
+async function storeFcmToken(req, res) {
+    try {
+        const id = req._id;
+        const role = req.role;
+        const { fcmToken } = req.body;
+
+        if (!id || !fcmToken) {
+            return res.status(400).json({ message: 'Missing required fields' });
+        }
+
+        // Define model based on role
+        let Model;
+        if (role === 'admin') {
+            Model = Admin;
+        } else if (role === 'employee') {
+            Model = Employee;
+        } else if (role === 'customer') {
+            Model = Customer;
+        } else {
+            return res.status(400).json({ message: 'Invalid role' });
+        }
+        const user = await Model.findOne({ _id: id });
+        if (!user) {
+            return res.status(404).json({ message: `${role.charAt(0).toUpperCase() + role.slice(1)} not found` });
+        }
+        
+        user.fcmToken = fcmToken;
+        await user.save();
+
+        return res.status(200).json({ message: 'Token stored successfully' });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+}
+
+
+
 module.exports = {
     generateToken,
     verifyToken,
     adminCheck,
-    roleChecks
+    roleChecks,
+    storeFcmToken
 };
